@@ -6,6 +6,7 @@ Used for data ingestion and API capture.
 import requests
 import json
 import time
+import re
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin, urlparse
 import logging
@@ -13,6 +14,48 @@ import logging
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def extract_json_from_html(html_content: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract JSON from HTML wrapper that FlareSolverr returns.
+    
+    Args:
+        html_content: HTML content from FlareSolverr
+        
+    Returns:
+        Parsed JSON data or None if extraction fails
+    """
+    try:
+        # Look for JSON content between <pre> tags
+        pre_pattern = r'<pre[^>]*>(.*?)</pre>'
+        match = re.search(pre_pattern, html_content, re.DOTALL)
+        
+        if match:
+            json_content = match.group(1).strip()
+            try:
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                pass
+        
+        # Fallback: try to find JSON pattern directly
+        json_pattern = r'\{.*\}'
+        json_match = re.search(json_pattern, html_content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # Final fallback: check if the content is already JSON
+        try:
+            return json.loads(html_content)
+        except json.JSONDecodeError:
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error extracting JSON from HTML: {e}")
+        return None
 
 
 class FlareSolverrClient:
@@ -99,7 +142,7 @@ class FlareSolverrClient:
         
         Args:
             url: URL to request
-            headers: Optional headers to include
+            headers: Optional headers (ignored in FlareSolverr v2+)
             cookies: Optional cookies to include
             return_only_cookies: If True, only return cookies
             max_timeout: Optional timeout override
@@ -118,8 +161,8 @@ class FlareSolverrClient:
             "maxTimeout": (max_timeout or self.timeout) * 1000
         }
         
-        if headers:
-            payload["headers"] = headers
+        # Note: FlareSolverr v2+ removed support for custom headers
+        # Only include cookies and returnOnlyCookies if specified
         if cookies:
             payload["cookies"] = cookies
         if return_only_cookies:

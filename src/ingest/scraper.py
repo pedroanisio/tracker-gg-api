@@ -7,6 +7,7 @@ import asyncio
 import random
 import time
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Set
 from pathlib import Path
@@ -280,7 +281,7 @@ class EnhancedValorantScraper:
             client: FlareSolverr client
             endpoint_name: Name of the endpoint
             url: URL to fetch
-            headers: Request headers
+            headers: Request headers (for logging only, not sent to FlareSolverr v2)
             
         Returns:
             Endpoint result
@@ -291,21 +292,20 @@ class EnhancedValorantScraper:
                 if attempt > 0:
                     await self.smart_delay(attempt)
                 
-                # Randomize headers for each attempt
-                attempt_headers = headers.copy()
-                attempt_headers["user-agent"] = get_random_user_agent()
-                
                 logger.info(f"Fetching {endpoint_name} (attempt {attempt + 1}/{self.max_retries})")
                 
-                result = client.get_request(url, headers=attempt_headers)
+                # NOTE: FlareSolverr v2 removed headers parameter, so we don't send custom headers
+                result = client.get_request(url)
                 solution = result.get("solution", {})
                 status_code = solution.get("status", 0)
                 response_text = solution.get("response", "")
                 
                 # Success case
                 if status_code == 200 and response_text:
-                    try:
-                        api_data = json.loads(response_text)
+                    # Try to extract JSON from potentially HTML-wrapped response
+                    api_data = extract_json_from_html(response_text)
+                    
+                    if api_data is not None:
                         logger.info(f"✓ {endpoint_name}: Success")
                         return {
                             "url": url,
@@ -314,16 +314,27 @@ class EnhancedValorantScraper:
                             "data": api_data,
                             "timestamp": get_current_timestamp()
                         }
-                    except json.JSONDecodeError as e:
-                        logger.error(f"✗ {endpoint_name}: JSON decode error - {e}")
+                    else:
+                        logger.error(f"✗ {endpoint_name}: JSON extraction failed")
                         if attempt == self.max_retries - 1:  # Last attempt
                             return {
                                 "url": url,
                                 "status": "json_error",
                                 "status_code": status_code,
-                                "error": str(e),
+                                "error": "Failed to extract JSON from response",
                                 "raw_response": response_text[:500]
                             }
+                
+                # Empty response case
+                elif status_code == 200 and not response_text:
+                    logger.error(f"✗ {endpoint_name}: Empty response")
+                    if attempt == self.max_retries - 1:  # Last attempt
+                        return {
+                            "url": url,
+                            "status": "empty_response",
+                            "status_code": status_code,
+                            "error": "Response is empty"
+                        }
                 
                 # Rate limited or blocked
                 elif status_code == 429 or status_code == 403:
@@ -686,6 +697,48 @@ async def enhanced_update_player_data(riot_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Enhanced update failed for {riot_id}: {e}")
         return create_error_response(riot_id, str(e))
+
+
+def extract_json_from_html(html_content: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract JSON from HTML wrapper that FlareSolverr returns.
+    
+    Args:
+        html_content: HTML content from FlareSolverr
+        
+    Returns:
+        Parsed JSON data or None if extraction fails
+    """
+    try:
+        # Look for JSON content between <pre> tags
+        pre_pattern = r'<pre[^>]*>(.*?)</pre>'
+        match = re.search(pre_pattern, html_content, re.DOTALL)
+        
+        if match:
+            json_content = match.group(1).strip()
+            try:
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                pass
+        
+        # Fallback: try to find JSON pattern directly
+        json_pattern = r'\{.*\}'
+        json_match = re.search(json_pattern, html_content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # Final fallback: check if the content is already JSON
+        try:
+            return json.loads(html_content)
+        except json.JSONDecodeError:
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error extracting JSON from HTML: {e}")
+        return None
 
 
 if __name__ == "__main__":

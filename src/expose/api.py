@@ -680,7 +680,7 @@ async def enhanced_update_player(
     """Enhanced update player data using browser-based API interception."""
     try:
         # Import the enhanced update system
-        from ..ingest.enhanced_scraper import enhanced_update_player_data
+        from ..ingest.scraper import enhanced_update_player_data
         
         riot_id = validate_riot_id(riot_id)
         
@@ -822,7 +822,7 @@ async def bulk_update_players(
 ):
     """Bulk update multiple players using browser-based interception."""
     try:
-        from ..ingest.enhanced_scraper import EnhancedValorantScraper
+        from ..ingest.scraper import EnhancedValorantScraper
         
         # Validate all riot IDs
         validated_ids = []
@@ -853,7 +853,7 @@ async def bulk_update_players(
         for result in results:
             if result.get("status") == "success":
                 try:
-                    from ..ingest.unified_data_loader import UnifiedTrackerDataLoader
+                    from ..ingest.data_loader import UnifiedTrackerDataLoader
                     
                     loader = UnifiedTrackerDataLoader()
                     # The data files are auto-created by the updater
@@ -964,7 +964,7 @@ async def test_update_system(
         test_riot_id = validate_riot_id(test_riot_id)
         
         # Run a test update
-        from ..ingest.enhanced_scraper import enhanced_update_player_data
+        from ..ingest.scraper import enhanced_update_player_data
         
         start_time = datetime.utcnow()
         result = await enhanced_update_player_data(test_riot_id)

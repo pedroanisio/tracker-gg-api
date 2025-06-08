@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 def run_ingestion(args):
     """Run data ingestion operations."""
-    from .ingest.unified_data_loader import load_data_from_directory, load_single_file, init_db
+    from .ingest.data_loader import load_data_from_directory, load_single_file, init_db
     from .ingest.flaresolverr_client import test_flaresolverr_connection, capture_player_data
-    from .ingest.enhanced_scraper import scrape_player, test_scraper_connection
+    from .ingest.scraper import scrape_player, test_scraper_connection
     
     if args.init_db:
         init_db()
