@@ -9,6 +9,10 @@ import logging
 from typing import Dict, List, Any, Optional
 from anthropic import Anthropic
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -23,10 +27,19 @@ class ValorantAgent:
     """AI agent for providing Valorant player insights."""
     
     def __init__(self):
-        self.anthropic = Anthropic(
-            api_key=os.getenv("ANTHROPIC_API_KEY")
-        )
+        # Get API key from environment
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        
+        if not api_key:
+            logger.error("ANTHROPIC_API_KEY environment variable is not set!")
+            raise ValueError(
+                "ANTHROPIC_API_KEY environment variable is required. "
+                "Please set it in your .env file or environment variables."
+            )
+        
+        self.anthropic = Anthropic(api_key=api_key)
         self.conversation_history = []
+        logger.info("ValorantAgent initialized successfully with API key")
         
     async def chat(self, message: str, player_context: Optional[str] = None) -> str:
         """

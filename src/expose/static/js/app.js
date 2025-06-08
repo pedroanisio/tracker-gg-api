@@ -751,15 +751,62 @@ class ValorantStatsApp {
             updateBtn.classList.add('loading');
             updateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Updating...';
             
-            // Re-search the current player (this will refresh all data)
-            await this.searchPlayer(this.currentPlayer);
+            // Use enhanced update endpoint
+            const response = await fetch(`/players/${encodeURIComponent(this.currentPlayer)}/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
             
-            // Show success message in chat
-            this.addChatMessage('system', `✅ Successfully updated data for ${this.currentPlayer}`);
+            if (!response.ok) {
+                throw new Error(`Update failed: HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                // Show detailed success message in chat
+                const summary = result.update_summary;
+                const antiDetection = result.anti_detection;
+                
+                this.addChatMessage('system', `✅ Successfully updated ${this.currentPlayer}!
+                
+📊 Update Summary:
+• ${summary.successful}/${summary.total_endpoints} endpoints fetched successfully
+• ${summary.priority_achieved ? '✓' : '✗'} Priority data acquired
+• ${summary.checkpoint_status} checkpoint status
+
+🛡️ Anti-Detection Status:
+• ${antiDetection.user_agent_rotated ? '✓' : '✗'} User agent rotation
+• ${antiDetection.delays_applied ? '✓' : '✗'} Smart delays applied
+• ${antiDetection.proxy_used ? '✓' : '✗'} Proxy protection
+• Retry count: ${antiDetection.retry_count}`);
+                
+                // Re-fetch and display updated data
+                await this.searchPlayer(this.currentPlayer);
+                
+            } else {
+                // Show failure details
+                const summary = result.update_summary;
+                this.addChatMessage('system', `⚠️ Update partially failed for ${this.currentPlayer}
+                
+📊 Results: ${summary.successful}/${summary.total_endpoints} endpoints successful
+❌ Issue: ${result.error_details || 'No new data available'}
+
+The system used smart checkpointing to avoid being detected, but couldn't fetch fresh data. This might be temporary - try again in a few minutes.`);
+            }
             
         } catch (error) {
-            console.error('Update error:', error);
-            this.addChatMessage('system', `❌ Failed to update data: ${error.message}`);
+            console.error('Enhanced update error:', error);
+            this.addChatMessage('system', `❌ Enhanced update failed: ${error.message}
+
+The system tried to use anti-detection techniques but encountered an error. This could be due to:
+• Network connectivity issues
+• Tracker.gg temporary restrictions
+• Server-side processing errors
+
+Please try again in a few minutes.`);
         } finally {
             // Reset button state
             updateBtn.disabled = false;

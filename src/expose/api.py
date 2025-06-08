@@ -11,11 +11,16 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from pydantic import BaseModel
+from pathlib import Path as PathLib
 import logging
 import json
 import asyncio
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import from shared modules
 from ..shared.database import (
@@ -658,6 +663,75 @@ async def get_conversation_history():
         raise HTTPException(
             status_code=500,
             detail=f"Error getting conversation history: {str(e)}"
+        )
+
+# ===============================
+# ENHANCED UPDATE ENDPOINT
+# ===============================
+
+@app.post("/players/{riot_id}/update", tags=["Players"])
+async def enhanced_update_player(
+    riot_id: str = Path(..., description="Player's Riot ID (username#tag)"),
+):
+    """Enhanced update player data using anti-detection techniques."""
+    try:
+        # Import enhanced scraper
+        from ..ingest.enhanced_scraper import enhanced_update_player_data
+        
+        riot_id = validate_riot_id(riot_id)
+        
+        logger.info(f"Starting enhanced update for {riot_id}")
+        
+        # Use enhanced scraper
+        result = await enhanced_update_player_data(riot_id)
+        
+        if result.get("summary", {}).get("successful", 0) > 0:
+            # Process the updated data immediately
+            from ..ingest.data_loader import TrackerDataLoader
+            
+            # Save to temporary file for processing
+            temp_file = PathLib(f"data/temp_update_{riot_id.replace('#', '_')}.json")
+            temp_file.parent.mkdir(exist_ok=True)
+            
+            # Convert to expected format for data loader
+            loader_format = {
+                "riot_id": riot_id,
+                "endpoints": result["endpoints"],
+                "capture_timestamp": result["update_timestamp"]
+            }
+            
+            with open(temp_file, 'w') as f:
+                json.dump(loader_format, f, indent=2, default=str)
+            
+            # Load into database
+            with get_session() as session:
+                loader = TrackerDataLoader()
+                loader.load_file(session, temp_file)
+            
+            # Clean up temp file
+            temp_file.unlink(missing_ok=True)
+            
+            return {
+                "status": "success",
+                "message": f"Successfully updated {riot_id}",
+                "update_summary": result["summary"],
+                "anti_detection": result["anti_detection"],
+                "timestamp": result["update_timestamp"]
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": f"Failed to fetch new data for {riot_id}",
+                "update_summary": result["summary"],
+                "error_details": result.get("error", "No successful endpoints"),
+                "timestamp": result["update_timestamp"]
+            }
+            
+    except Exception as e:
+        logger.error(f"Enhanced update error for {riot_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enhanced update failed: {str(e)}"
         )
 
 # ===============================
