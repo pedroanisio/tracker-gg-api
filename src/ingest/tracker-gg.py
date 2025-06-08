@@ -179,6 +179,121 @@ async def call_api_with_session(session, session_id, endpoint_url, endpoint_name
         return {"endpoint": endpoint_name, "url": endpoint_url, "status": "error", "error": str(e)}
 
 
+def organize_results_for_database(username: str, results: list) -> dict:
+    """Organize endpoint results into a format compatible with the database loader."""
+    
+    # Extract the riot_id from username 
+    riot_id = username  # Assuming username is already in riot_id format (username#tag)
+    
+    # Group successful results by endpoint
+    endpoints_data = {}
+    
+    for result in results:
+        if result.get("status") == "success" and result.get("filename"):
+            endpoint_name = result["endpoint"]
+            
+            try:
+                # Load the saved JSON file
+                with open(result["filename"], 'r') as f:
+                    endpoint_data = json.load(f)
+                
+                # Determine endpoint type and playlist from name
+                endpoint_type = ""
+                playlist = ""
+                
+                if "v1_aggregated" in endpoint_name:
+                    endpoint_type = "v1_aggregated"
+                    # Extract playlist from endpoint name (e.g., v1_aggregated_competitive_current_0)
+                    parts = endpoint_name.split('_')
+                    if len(parts) >= 3:
+                        playlist = parts[2]
+                elif "v2_segment_playlist" in endpoint_name:
+                    endpoint_type = "v2_playlist"
+                    # Extract playlist (e.g., v2_segment_playlist_competitive_web)
+                    parts = endpoint_name.split('_')
+                    if len(parts) >= 4:
+                        playlist = parts[3]
+                elif "v2_segment_loadout" in endpoint_name:
+                    endpoint_type = "v2_loadout"
+                    # Extract playlist (e.g., v2_segment_loadout_competitive_current)
+                    parts = endpoint_name.split('_')
+                    if len(parts) >= 4:
+                        playlist = parts[3]
+                
+                # Create the endpoint entry
+                endpoints_data[endpoint_name] = {
+                    "status": "success",
+                    "data": endpoint_data,
+                    "endpoint_type": endpoint_type,
+                    "playlist": playlist,
+                    "url": result["url"],
+                    "timestamp": time.time()
+                }
+                
+                logger.info(f"Organized endpoint {endpoint_name} for database loading")
+                
+            except Exception as e:
+                logger.error(f"Failed to load data from {result['filename']}: {e}")
+                continue
+    
+    # Create the combined data structure in browser intercepted format
+    combined_data = {
+        "riot_id": riot_id,
+        "capture_method": "browser_interception",
+        "capture_timestamp": time.time(),
+        "endpoints": endpoints_data,
+        "metadata": {
+            "total_endpoints_attempted": len(results),
+            "successful_endpoints": len(endpoints_data),
+            "scraper_version": "tracker-gg-grammar-test",
+            "timing_config": TIMING_CONFIG
+        }
+    }
+    
+    logger.info(f"Organized {len(endpoints_data)} successful endpoints for database loading")
+    return combined_data
+
+
+def load_results_to_database(username: str, combined_data: dict, data_dir: str = "./data") -> dict:
+    """Load the organized results into the database using UnifiedTrackerDataLoader."""
+    
+    try:
+        # Ensure data directory exists
+        data_path = Path(data_dir)
+        data_path.mkdir(exist_ok=True)
+        
+        # Save the combined data to a file in the expected format
+        timestamp = int(time.time())
+        safe_username = username.replace('#', '_')
+        combined_filename = data_path / f"browser_capture_{safe_username}_{timestamp}.json"
+        
+        with open(combined_filename, 'w') as f:
+            json.dump(combined_data, f, indent=2)
+        
+        logger.info(f"Saved combined data to {combined_filename}")
+        
+        # Load into database using the convenience function
+        logger.info("Loading data into database...")
+        from .data_loader import load_single_file
+        stats = load_single_file(str(combined_filename))
+        
+        logger.info(f"Database loading completed: {stats}")
+        
+        return {
+            "status": "success",
+            "combined_filename": str(combined_filename),
+            "loading_stats": stats,
+            "endpoints_loaded": len(combined_data.get("endpoints", {}))
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to load data to database: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 async def generate_all_api_endpoints(username: str):
     """Generate all possible API endpoints based on the grammar."""
     
@@ -272,7 +387,7 @@ async def generate_all_api_endpoints(username: str):
     return endpoints
 
 
-async def test_complete_api_grammar(username: str):
+async def test_complete_api_grammar(username: str, load_to_database: bool = True):
     """Test all API endpoints from the grammar using flaresolverr."""
     
     session_id = f"grammar_test_{username.replace('#', '_')}_{int(time.time())}"
@@ -402,6 +517,43 @@ async def test_complete_api_grammar(username: str):
                 json.dump(summary, f, indent=2)
             
             print("💾 Complete summary saved")
+            
+            # Step 6: Load successful results into database
+            if load_to_database and successful > 0:
+                print("\n📋 Step 6: Loading data into database...")
+                try:
+                    # Organize results for database loading
+                    combined_data = organize_results_for_database(username, results)
+                    
+                    if combined_data.get("endpoints"):
+                        # Load into database
+                        db_result = load_results_to_database(username, combined_data)
+                        
+                        if db_result.get("status") == "success":
+                            print("✅ Database loading successful!")
+                            print(f"📊 Loaded {db_result['endpoints_loaded']} endpoints into database")
+                            print(f"📁 Combined data saved: {db_result['combined_filename']}")
+                            
+                            # Add database info to summary
+                            summary["database_loading"] = db_result
+                        else:
+                            print(f"❌ Database loading failed: {db_result.get('error', 'Unknown error')}")
+                            summary["database_loading"] = db_result
+                    else:
+                        print("⚠️  No successful endpoints to load into database")
+                        summary["database_loading"] = {"status": "no_data", "message": "No successful endpoints"}
+                        
+                except Exception as e:
+                    print(f"❌ Database loading error: {e}")
+                    logger.error(f"Database loading failed: {e}")
+                    summary["database_loading"] = {"status": "error", "error": str(e)}
+            elif load_to_database and successful == 0:
+                print("\n⚠️  Skipping database loading - no successful endpoints")
+                summary["database_loading"] = {"status": "skipped", "reason": "no_successful_endpoints"}
+            else:
+                print("\n📋 Step 6: Database loading disabled")
+                summary["database_loading"] = {"status": "disabled"}
+            
             return summary
             
         except Exception as e:
@@ -411,7 +563,7 @@ async def test_complete_api_grammar(username: str):
         finally:
             # Cleanup with delay
             try:
-                print("\n📋 Step 6: Cleaning up session...")
+                print("\n📋 Step 7: Cleaning up session...")
                 await asyncio.sleep(2)  # Give time before cleanup
                 destroy_payload = {"cmd": "sessions.destroy", "session": session_id}
                 async with session.post(FLARESOLVERR_URL, json=destroy_payload) as response:
@@ -448,8 +600,8 @@ async def main():
     
     start_time = time.time()
     
-    # Run the complete grammar test
-    summary = await test_complete_api_grammar(username)
+    # Run the complete grammar test (with database loading enabled by default)
+    summary = await test_complete_api_grammar(username, load_to_database=True)
     
     actual_time = (time.time() - start_time) / 60
     
@@ -484,11 +636,172 @@ async def main():
         if rate_limited > 0:
             print(f"  🚫 Rate limited: {rate_limited}")
         
+        # Show database loading results
+        db_loading = summary.get("database_loading", {})
+        db_status = db_loading.get("status", "unknown")
+        
+        print(f"\n🗄️  Database Loading:")
+        if db_status == "success":
+            print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
+            print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+        elif db_status == "error":
+            print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
+        elif db_status == "skipped":
+            print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
+        elif db_status == "disabled":
+            print(f"  ⏸️  Disabled")
+        elif db_status == "no_data":
+            print(f"  📭 No data to load")
+        else:
+            print(f"  ❓ Status: {db_status}")
+        
     else:
         print("❌ Grammar test failed")
     
     print("\n✨ Complete API discovery finished!")
 
 
+def load_existing_files_to_database(data_dir: str = "./data", pattern: str = "grammar_*.json") -> dict:
+    """Load existing grammar test files into the database."""
+    
+    try:
+        from .data_loader import load_data_from_directory
+        
+        data_path = Path(data_dir)
+        if not data_path.exists():
+            return {"status": "error", "error": f"Directory {data_dir} does not exist"}
+        
+        # Find grammar files
+        grammar_files = list(data_path.glob(pattern))
+        
+        if not grammar_files:
+            return {"status": "error", "error": f"No files matching pattern '{pattern}' found in {data_dir}"}
+        
+        logger.info(f"Found {len(grammar_files)} grammar files to process")
+        
+        # Load all files
+        stats = load_data_from_directory(data_dir)
+        
+        return {
+            "status": "success",
+            "files_found": len(grammar_files),
+            "loading_stats": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to load existing files: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Tracker.gg API Grammar Test with Database Loading")
+    parser.add_argument("--username", default="apolloZ#sun", help="Riot ID to test")
+    parser.add_argument("--no-database", action="store_true", help="Skip database loading")
+    parser.add_argument("--load-existing", action="store_true", help="Load existing grammar files to database")
+    parser.add_argument("--data-dir", default="./data", help="Data directory for database files")
+    
+    args = parser.parse_args()
+    
+    if args.load_existing:
+        print("📁 Loading existing grammar files to database...")
+        result = load_existing_files_to_database(args.data_dir)
+        
+        if result["status"] == "success":
+            print(f"✅ Successfully processed {result['files_found']} files")
+            print(f"📊 Loading stats: {result['loading_stats']}")
+        else:
+            print(f"❌ Failed: {result['error']}")
+    else:
+        # Run the normal grammar test
+        async def main_with_args():
+            username = args.username
+            load_to_db = not args.no_database
+            
+            print("🧬 Testing Complete Tracker.gg API Grammar")
+            if load_to_db:
+                print("🗄️  Database loading: ENABLED")
+            else:
+                print("🗄️  Database loading: DISABLED")
+            print("This will systematically test ALL possible endpoint combinations")
+            print("from the provided grammar rules.\n")
+            
+            # Calculate estimated time
+            endpoints = await generate_all_api_endpoints(username)
+            avg_delay = (TIMING_CONFIG['min_request_delay'] + TIMING_CONFIG['max_request_delay']) / 2
+            batches = (len(endpoints) + TIMING_CONFIG['batch_size'] - 1) // TIMING_CONFIG['batch_size']
+            estimated_time = (
+                len(endpoints) * avg_delay +  # Request delays
+                (batches - 1) * TIMING_CONFIG['batch_delay'] +  # Inter-batch delays
+                TIMING_CONFIG['authentication_wait'] +  # Initial auth wait
+                30  # Session setup and cleanup buffer
+            ) / 60  # Convert to minutes
+            
+            print(f"⏱️  Estimated completion time: {estimated_time:.1f} minutes")
+            print(f"📊 {len(endpoints)} endpoints in {batches} batches")
+            print("💡 Tip: This will respect rate limits and use human-like timing\n")
+            
+            start_time = time.time()
+            
+            # Run the complete grammar test
+            summary = await test_complete_api_grammar(username, load_to_database=load_to_db)
+            
+            actual_time = (time.time() - start_time) / 60
+            
+            if summary:
+                print("\n🎉 COMPLETE GRAMMAR TEST FINISHED!")
+                print("=" * 60)
+                print(f"📊 Total endpoints: {summary['total_endpoints']}")
+                print(f"✅ Successful: {summary['successful_endpoints']}")
+                print(f"❌ Failed: {summary['failed_endpoints']}")
+                print(f"📈 Success rate: {summary['success_rate']}")
+                print(f"⏱️  Actual time: {actual_time:.1f} minutes")
+                print(f"🎯 Efficiency: {(estimated_time/actual_time*100):.0f}% of estimate" if actual_time > 0 else "")
+                
+                print(f"\n📁 Data files created:")
+                successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
+                for filename in successful_files[:10]:  # Show first 10
+                    print(f"  📄 {filename}")
+                
+                if len(successful_files) > 10:
+                    print(f"  ... and {len(successful_files) - 10} more files")
+                
+                print(f"\n📋 Complete summary: complete_grammar_test_{username.replace('#', '_')}.json")
+                
+                # Show breakdown by API version
+                v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
+                v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
+                rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+                
+                print(f"\n📊 Breakdown:")
+                print(f"  🔹 API v1 successful: {v1_success}")
+                print(f"  🔹 API v2 successful: {v2_success}")
+                if rate_limited > 0:
+                    print(f"  🚫 Rate limited: {rate_limited}")
+                
+                # Show database loading results
+                db_loading = summary.get("database_loading", {})
+                db_status = db_loading.get("status", "unknown")
+                
+                print(f"\n🗄️  Database Loading:")
+                if db_status == "success":
+                    print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
+                    print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+                elif db_status == "error":
+                    print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
+                elif db_status == "skipped":
+                    print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
+                elif db_status == "disabled":
+                    print(f"  ⏸️  Disabled")
+                elif db_status == "no_data":
+                    print(f"  📭 No data to load")
+                else:
+                    print(f"  ❓ Status: {db_status}")
+                
+            else:
+                print("❌ Grammar test failed")
+            
+            print("\n✨ Complete API discovery finished!")
+        
+        asyncio.run(main_with_args()) 
