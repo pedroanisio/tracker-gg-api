@@ -35,6 +35,25 @@ TIMING_CONFIG = {
     "extra_delay_base": 30.0,      # Base extra delay for consecutive failures (seconds)
 }
 
+# Endpoint priorities for targeted updates (higher = more important)
+ENDPOINT_PRIORITIES = {
+    "v1_competitive_aggregated": 1.0,
+    "v1_premier_aggregated": 0.9,
+    "v2_competitive_playlist": 0.8,
+    "v2_premier_playlist": 0.7,
+    "v1_unrated_aggregated": 0.6,
+    "v2_unrated_playlist": 0.5,
+    "v2_deathmatch_playlist": 0.4,
+    "v2_loadout_segments": 0.3,
+    "v2_swiftplay_playlist": 0.2,
+    "v2_spikerush_playlist": 0.1
+}
+
+# Priority thresholds
+PRIORITY_HIGH = 0.7  # For critical updates
+PRIORITY_MEDIUM = 0.4  # For regular updates
+PRIORITY_LOW = 0.1   # For full updates only
+
 
 def extract_json_from_html(html_content: str):
     """Extract JSON from HTML wrapper that flaresolverr returns."""
@@ -693,11 +712,314 @@ def load_existing_files_to_database(data_dir: str = "./data", pattern: str = "gr
         return {"status": "error", "error": str(e)}
 
 
+async def load_full_api_data(username: str, load_to_database: bool = True) -> dict:
+    """
+    Load complete API data by testing ALL possible endpoints.
+    Use this for initial data discovery or comprehensive updates.
+    
+    Args:
+        username: Riot ID (username#tag)
+        load_to_database: Whether to load results into database
+        
+    Returns:
+        Complete API discovery results
+    """
+    
+    print("🔍 FULL API DATA LOADING")
+    print("=" * 50)
+    print("📊 This will test ALL possible endpoint combinations")
+    print("🔧 Use for: Initial discovery, comprehensive updates, data mining")
+    print("⏱️  Expected time: 15-30 minutes depending on rate limits")
+    print()
+    
+    return await test_complete_api_grammar(username, load_to_database)
+
+
+async def update_recent_data(username: str, priority_threshold: float = PRIORITY_HIGH, load_to_database: bool = True) -> dict:
+    """
+    Update only the most recent/important data endpoints.
+    Much faster than full API loading, focuses on priority endpoints.
+    
+    Args:
+        username: Riot ID (username#tag)
+        priority_threshold: Minimum priority level (0.0-1.0)
+        load_to_database: Whether to load results into database
+        
+    Returns:
+        Targeted update results
+    """
+    
+    session_id = f"recent_update_{username.replace('#', '_')}_{int(time.time())}"
+    encoded_username = quote(username)
+    profile_url = f"https://tracker.gg/valorant/profile/riot/{encoded_username}"
+    
+    print("⚡ RECENT DATA UPDATE")
+    print("=" * 50)
+    print(f"👤 Target: {username}")
+    print(f"🎯 Priority threshold: {priority_threshold}")
+    print(f"🔧 Session: {session_id}")
+    print("📊 This will test only HIGH-PRIORITY endpoints for recent data")
+    print("🔧 Use for: Regular updates, recent match data, current stats")
+    print("⏱️  Expected time: 2-5 minutes")
+    print()
+    
+    # Generate only priority endpoints
+    priority_endpoints = await generate_priority_endpoints(username, priority_threshold)
+    print(f"🎯 Selected {len(priority_endpoints)} priority endpoints (threshold ≥ {priority_threshold})")
+    
+    results = []
+    
+    async with aiohttp.ClientSession() as session:
+        try:
+            # Step 1: Create flaresolverr session
+            print("\n📋 Step 1: Creating browser session...")
+            create_payload = {"cmd": "sessions.create", "session": session_id}
+            
+            async with session.post(FLARESOLVERR_URL, json=create_payload) as response:
+                result = await response.json()
+                if result.get("status") != "ok":
+                    print(f"❌ Failed to create session: {result}")
+                    return create_error_result(username, "Failed to create session")
+                print("✅ Session created")
+            
+            # Step 2: Load profile page for authentication
+            print("\n📋 Step 2: Loading profile page for authentication...")
+            navigate_payload = {
+                "cmd": "request.get",
+                "url": profile_url,
+                "session": session_id,
+                "maxTimeout": 60000,
+                "returnOnlyCookies": False,
+                "returnRawHtml": True
+            }
+            
+            async with session.post(FLARESOLVERR_URL, json=navigate_payload) as response:
+                result = await response.json()
+                solution = result.get("solution", {})
+                
+                if result.get("status") != "ok" or solution.get("status") != 200:
+                    print(f"❌ Failed to load profile: {result}")
+                    return create_error_result(username, "Failed to load profile")
+                
+                print("✅ Profile loaded - authentication established")
+                user_agent = solution.get("userAgent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            
+            # Step 3: Quick authentication wait (shorter than full discovery)
+            auth_wait = 3.0  # Reduced wait time for updates
+            print(f"\n📋 Step 3: Waiting {auth_wait}s for authentication...")
+            await asyncio.sleep(auth_wait)
+            
+            # Step 4: Test priority endpoints efficiently
+            print("\n📋 Step 4: Testing priority endpoints...")
+            print("=" * 40)
+            
+            successful = 0
+            failed = 0
+            
+            for i, (endpoint_name, endpoint_url) in enumerate(priority_endpoints):
+                print(f"\n[{i+1}/{len(priority_endpoints)}] Priority endpoint:")
+                
+                result = await call_api_with_session(session, session_id, endpoint_url, endpoint_name, user_agent)
+                results.append(result)
+                
+                if result.get("status") == "success":
+                    successful += 1
+                else:
+                    failed += 1
+                
+                # Shorter delays for priority updates
+                if i < len(priority_endpoints) - 1:  # Not the last endpoint
+                    delay = random.uniform(0.5, 1.5)  # Faster than full discovery
+                    print(f"⏳ Quick delay: {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+            
+            # Step 5: Create results summary
+            print("\n📋 Step 5: Creating update summary...")
+            summary = {
+                "username": username,
+                "session_id": session_id,
+                "update_type": "recent_data",
+                "priority_threshold": priority_threshold,
+                "timestamp": time.time(),
+                "total_endpoints": len(priority_endpoints),
+                "successful_endpoints": successful,
+                "failed_endpoints": failed,
+                "success_rate": f"{(successful/len(priority_endpoints)*100):.1f}%" if priority_endpoints else "0%",
+                "timing_config": {
+                    "update_mode": "priority_only",
+                    "auth_wait": auth_wait,
+                    "quick_delays": "0.5-1.5s"
+                },
+                "results": results
+            }
+            
+            # Save summary
+            summary_filename = f"recent_update_{username.replace('#', '_')}_{int(time.time())}.json"
+            with open(summary_filename, 'w') as f:
+                json.dump(summary, f, indent=2)
+            
+            print("💾 Update summary saved")
+            
+            # Step 6: Load to database if requested
+            if load_to_database and successful > 0:
+                print("\n📋 Step 6: Loading recent data into database...")
+                try:
+                    combined_data = organize_results_for_database(username, results)
+                    
+                    if combined_data.get("endpoints"):
+                        db_result = load_results_to_database(username, combined_data)
+                        
+                        if db_result.get("status") == "success":
+                            print("✅ Database loading successful!")
+                            print(f"📊 Loaded {db_result['endpoints_loaded']} priority endpoints")
+                            summary["database_loading"] = db_result
+                        else:
+                            print(f"❌ Database loading failed: {db_result.get('error')}")
+                            summary["database_loading"] = db_result
+                    else:
+                        print("⚠️  No data to load into database")
+                        summary["database_loading"] = {"status": "no_data"}
+                        
+                except Exception as e:
+                    print(f"❌ Database loading error: {e}")
+                    summary["database_loading"] = {"status": "error", "error": str(e)}
+            elif successful == 0:
+                summary["database_loading"] = {"status": "skipped", "reason": "no_successful_endpoints"}
+            else:
+                summary["database_loading"] = {"status": "disabled"}
+            
+            return summary
+            
+        except Exception as e:
+            print(f"❌ Update error: {e}")
+            return create_error_result(username, str(e))
+        
+        finally:
+            # Quick cleanup
+            try:
+                print("\n📋 Step 7: Cleaning up session...")
+                destroy_payload = {"cmd": "sessions.destroy", "session": session_id}
+                async with session.post(FLARESOLVERR_URL, json=destroy_payload) as response:
+                    result = await response.json()
+                    if result.get("status") == "ok":
+                        print("✅ Session cleaned up")
+            except Exception as e:
+                print(f"⚠️  Cleanup warning: {e}")
+
+
+async def generate_priority_endpoints(username: str, priority_threshold: float = PRIORITY_HIGH) -> list:
+    """
+    Generate only priority endpoints for targeted updates.
+    
+    Args:
+        username: Riot ID
+        priority_threshold: Minimum priority level (0.0-1.0)
+        
+    Returns:
+        List of (endpoint_name, endpoint_url) tuples for priority endpoints
+    """
+    
+    encoded_username = quote(username)
+    base_url = "https://api.tracker.gg"
+    
+    # Define priority endpoint patterns
+    priority_endpoints = []
+    
+    # High priority: Current competitive and premier data
+    if priority_threshold <= 1.0:
+        # V1 Aggregated - most recent data
+        for playlist in ["competitive", "premier"]:
+            url = f"{base_url}/api/v1/valorant/matches/riot/{encoded_username}/aggregated"
+            params = f"?localOffset=0&playlist={playlist}&seasonId="  # Current season
+            name = f"v1_aggregated_{playlist}_current_0"
+            priority = ENDPOINT_PRIORITIES.get(f"v1_{playlist}_aggregated", 0.5)
+            
+            if priority >= priority_threshold:
+                priority_endpoints.append((name, url + params, priority))
+    
+    if priority_threshold <= 0.8:
+        # V2 Playlist segments - current competitive/premier data
+        for playlist in ["competitive", "premier"]:
+            url = f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_username}/segments/playlist"
+            params = f"?playlist={playlist}&source=web"
+            name = f"v2_segment_playlist_{playlist}_web"
+            priority = ENDPOINT_PRIORITIES.get(f"v2_{playlist}_playlist", 0.5)
+            
+            if priority >= priority_threshold:
+                priority_endpoints.append((name, url + params, priority))
+    
+    if priority_threshold <= 0.6:
+        # V1 Unrated for broader recent activity
+        url = f"{base_url}/api/v1/valorant/matches/riot/{encoded_username}/aggregated"
+        params = f"?localOffset=0&playlist=unrated&seasonId="
+        name = f"v1_aggregated_unrated_current_0"
+        priority = ENDPOINT_PRIORITIES.get("v1_unrated_aggregated", 0.5)
+        
+        if priority >= priority_threshold:
+            priority_endpoints.append((name, url + params, priority))
+    
+    if priority_threshold <= 0.5:
+        # V2 Unrated playlist
+        url = f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_username}/segments/playlist"
+        params = f"?playlist=unrated&source=web"
+        name = f"v2_segment_playlist_unrated_web"
+        priority = ENDPOINT_PRIORITIES.get("v2_unrated_playlist", 0.5)
+        
+        if priority >= priority_threshold:
+            priority_endpoints.append((name, url + params, priority))
+    
+    if priority_threshold <= 0.4:
+        # Additional casual modes
+        for playlist in ["deathmatch", "swiftplay"]:
+            url = f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_username}/segments/playlist"
+            params = f"?playlist={playlist}&source=web"
+            name = f"v2_segment_playlist_{playlist}_web"
+            priority = ENDPOINT_PRIORITIES.get(f"v2_{playlist}_playlist", 0.3)
+            
+            if priority >= priority_threshold:
+                priority_endpoints.append((name, url + params, priority))
+    
+    if priority_threshold <= 0.3:
+        # Loadout data (less frequent updates needed)
+        for playlist in ["competitive", "premier"]:
+            url = f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_username}/segments/loadout"
+            params = f"?playlist={playlist}&seasonId="
+            name = f"v2_segment_loadout_{playlist}_current"
+            priority = ENDPOINT_PRIORITIES.get("v2_loadout_segments", 0.3)
+            
+            if priority >= priority_threshold:
+                priority_endpoints.append((name, url + params, priority))
+    
+    # Sort by priority (highest first)
+    priority_endpoints.sort(key=lambda x: x[2], reverse=True)
+    
+    # Return only name and URL (remove priority)
+    return [(name, url) for name, url, priority in priority_endpoints]
+
+
+def create_error_result(username: str, error_message: str) -> dict:
+    """Create a standardized error result."""
+    return {
+        "username": username,
+        "status": "error",
+        "error": error_message,
+        "timestamp": time.time(),
+        "total_endpoints": 0,
+        "successful_endpoints": 0,
+        "failed_endpoints": 0,
+        "success_rate": "0%"
+    }
+
+
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Tracker.gg API Grammar Test with Database Loading")
-    parser.add_argument("--username", default="apolloZ#sun", help="Riot ID to test")
+    parser = argparse.ArgumentParser(description="Tracker.gg API Data Loader")
+    parser.add_argument("--username", default="apolloZ#sun", help="Riot ID to process")
+    parser.add_argument("--mode", choices=["init", "update", "full"], default="init", 
+                       help="Operation mode: init=full load for new users, update=recent data only, full=complete discovery")
+    parser.add_argument("--priority", choices=["high", "medium", "low"], default="high",
+                       help="Priority level for update mode (high=0.7+, medium=0.4+, low=0.1+)")
     parser.add_argument("--no-database", action="store_true", help="Skip database loading")
     parser.add_argument("--load-existing", action="store_true", help="Load existing grammar files to database")
     parser.add_argument("--data-dir", default="./data", help="Data directory for database files")
