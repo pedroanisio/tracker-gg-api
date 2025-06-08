@@ -1,29 +1,30 @@
 """
-Enhanced Valorant scraper with anti-detection techniques and smart update strategies.
-Optimized for avoiding tracker.gg rate limiting and detection.
+Enhanced Valorant Scraper for Tracker.gg
+Unified scraper combining web scraping, API capture, and anti-detection techniques.
 """
 
 import asyncio
 import random
 import time
 import json
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Set
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urljoin
-import requests
 from sqlmodel import Session, select
+from bs4 import BeautifulSoup
 
 from .flaresolverr_client import FlareSolverrClient
-from .valorant_scraper import ValorantScraper
 from ..shared.database import get_session, Player, DataIngestionLog
-from ..shared.models import TrackerAPIConfig
+from ..shared.utils import (
+    setup_logger, parse_riot_id, encode_riot_id, get_current_timestamp,
+    get_current_datetime, get_random_user_agent, get_browser_headers,
+    get_api_headers, TRACKER_API_BASE_URL, TRACKER_WEB_BASE_URL,
+    create_success_response, create_error_response
+)
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 @dataclass
 class UpdateCheckpoint:
@@ -34,8 +35,8 @@ class UpdateCheckpoint:
     priority_score: float
     retry_count: int = 0
 
-class EnhancedAntiDetectionScraper:
-    """Enhanced scraper with anti-detection and smart update strategies."""
+class EnhancedValorantScraper:
+    """Enhanced scraper with web scraping, API capture, and anti-detection."""
     
     def __init__(self, 
                  flaresolverr_url: str = "http://tracker-flaresolverr:8191",
@@ -54,19 +55,10 @@ class EnhancedAntiDetectionScraper:
         self.proxy_list = proxy_list or []
         self.proxy_index = 0
         
-        # Anti-detection settings
-        self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0"
-        ]
-        
         # Request timing settings
-        self.min_delay = 1.0  # Minimum delay between requests
-        self.max_delay = 3.0  # Maximum delay between requests
-        self.backoff_multiplier = 2.0  # Exponential backoff multiplier
+        self.min_delay = 1.0
+        self.max_delay = 3.0
+        self.backoff_multiplier = 2.0
         self.max_retries = 3
         
         # Checkpoints for tracking updates
@@ -83,10 +75,6 @@ class EnhancedAntiDetectionScraper:
             "v2_deathmatch_playlist": 0.4,
             "v2_loadout_segments": 0.3
         }
-    
-    def get_random_user_agent(self) -> str:
-        """Get a random user agent string."""
-        return random.choice(self.user_agents)
     
     def get_next_proxy(self) -> Optional[str]:
         """Get next proxy in rotation."""
@@ -127,7 +115,7 @@ class EnhancedAntiDetectionScraper:
             return True
         
         # Calculate time since last update
-        time_since_update = datetime.utcnow() - player.last_updated
+        time_since_update = get_current_datetime() - player.last_updated
         
         # Priority scoring based on various factors
         priority_score = 0.0
@@ -148,6 +136,119 @@ class EnhancedAntiDetectionScraper:
         
         # Update if priority score is high enough
         return priority_score >= 0.5
+    
+    def get_player_profile_page(self, riot_id: str) -> Optional[str]:
+        """
+        Get the HTML content of a player's profile page.
+        
+        Args:
+            riot_id: Player's Riot ID (username#tag)
+            
+        Returns:
+            HTML content or None if failed
+        """
+        
+        encoded_riot_id = encode_riot_id(riot_id)
+        profile_url = f"{TRACKER_WEB_BASE_URL}/valorant/profile/riot/{encoded_riot_id}/overview"
+        
+        try:
+            with FlareSolverrClient(self.flaresolverr_url) as client:
+                headers = get_browser_headers(riot_id)
+                result = client.get_request(profile_url, headers=headers)
+                
+                solution = result.get("solution", {})
+                if solution.get("status") == 200:
+                    return solution.get("response", "")
+                else:
+                    logger.error(f"Failed to get profile page: HTTP {solution.get('status')}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Error getting profile page: {e}")
+            return None
+    
+    def parse_player_overview(self, html_content: str) -> Dict[str, Any]:
+        """
+        Parse player overview data from HTML.
+        
+        Args:
+            html_content: HTML content from profile page
+            
+        Returns:
+            Parsed player data
+        """
+        
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Initialize result
+        player_data = {
+            "basic_info": {},
+            "current_rank": {},
+            "peak_rank": {},
+            "overview_stats": {},
+            "recent_matches": []
+        }
+        
+        try:
+            # Extract basic player info
+            player_name_elem = soup.find('span', class_='trn-ign__username')
+            if player_name_elem:
+                player_data["basic_info"]["username"] = player_name_elem.text.strip()
+            
+            player_tag_elem = soup.find('span', class_='trn-ign__discriminator')
+            if player_tag_elem:
+                player_data["basic_info"]["tag"] = player_tag_elem.text.strip().replace('#', '')
+            
+            # Extract current rank
+            rank_elem = soup.find('div', class_='valorant-ranked-badge')
+            if rank_elem:
+                rank_img = rank_elem.find('img')
+                if rank_img and 'alt' in rank_img.attrs:
+                    player_data["current_rank"]["tier"] = rank_img['alt']
+                
+                rank_text = rank_elem.find('div', class_='valorant-ranked-badge__rank-text')
+                if rank_text:
+                    player_data["current_rank"]["rank_text"] = rank_text.text.strip()
+            
+            # Extract overview statistics
+            stat_cards = soup.find_all('div', class_='numbers__number-value')
+            stat_labels = soup.find_all('div', class_='numbers__number-label')
+            
+            for stat_card, stat_label in zip(stat_cards, stat_labels):
+                if stat_card and stat_label:
+                    label = stat_label.text.strip()
+                    value = stat_card.text.strip()
+                    player_data["overview_stats"][label] = value
+            
+            # Extract recent matches (basic info)
+            match_cards = soup.find_all('div', class_='match')
+            for match_card in match_cards[:5]:  # Last 5 matches
+                match_info = {}
+                
+                # Map name
+                map_elem = match_card.find('div', class_='match__map')
+                if map_elem:
+                    match_info["map"] = map_elem.text.strip()
+                
+                # Score
+                score_elem = match_card.find('div', class_='match__score')
+                if score_elem:
+                    match_info["score"] = score_elem.text.strip()
+                
+                # Result (win/loss)
+                if 'match--won' in match_card.get('class', []):
+                    match_info["result"] = "win"
+                elif 'match--lost' in match_card.get('class', []):
+                    match_info["result"] = "loss"
+                else:
+                    match_info["result"] = "unknown"
+                
+                player_data["recent_matches"].append(match_info)
+            
+        except Exception as e:
+            logger.error(f"Error parsing player overview: {e}")
+        
+        return player_data
     
     def create_checkpoint(self, player_id: str, last_update: datetime) -> UpdateCheckpoint:
         """Create or update checkpoint for a player."""
@@ -192,7 +293,7 @@ class EnhancedAntiDetectionScraper:
                 
                 # Randomize headers for each attempt
                 attempt_headers = headers.copy()
-                attempt_headers["user-agent"] = self.get_random_user_agent()
+                attempt_headers["user-agent"] = get_random_user_agent()
                 
                 logger.info(f"Fetching {endpoint_name} (attempt {attempt + 1}/{self.max_retries})")
                 
@@ -211,7 +312,7 @@ class EnhancedAntiDetectionScraper:
                             "status": "success",
                             "status_code": status_code,
                             "data": api_data,
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": get_current_timestamp()
                         }
                     except json.JSONDecodeError as e:
                         logger.error(f"✗ {endpoint_name}: JSON decode error - {e}")
@@ -262,6 +363,24 @@ class EnhancedAntiDetectionScraper:
             "attempts": self.max_retries
         }
     
+    def get_player_api_data(self, riot_id: str) -> Dict[str, Any]:
+        """
+        Get comprehensive player data using API capture.
+        
+        Args:
+            riot_id: Player's Riot ID (username#tag)
+            
+        Returns:
+            Complete API data capture
+        """
+        
+        try:
+            with FlareSolverrClient(self.flaresolverr_url) as client:
+                return client.capture_tracker_api(riot_id)
+        except Exception as e:
+            logger.error(f"Error capturing API data: {e}")
+            return create_error_response(riot_id, str(e))
+    
     async def smart_update_player(self, riot_id: str, 
                                 checkpoint_only_recent: bool = True) -> Dict[str, Any]:
         """
@@ -274,42 +393,24 @@ class EnhancedAntiDetectionScraper:
         Returns:
             Update result
         """
-        username, tag = riot_id.split('#') if '#' in riot_id else (riot_id, '')
-        encoded_riot_id = f"{username}%23{tag}"
-        base_url = "https://api.tracker.gg"
+        encoded_riot_id = encode_riot_id(riot_id)
         
         # Create or get checkpoint
-        checkpoint = self.create_checkpoint(riot_id, datetime.utcnow())
+        checkpoint = self.create_checkpoint(riot_id, get_current_datetime())
         
         # Enhanced headers with anti-detection
-        headers = {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "en-US,en;q=0.9,en-GB;q=0.8",
-            "cache-control": "no-cache",
-            "dnt": "1",
-            "origin": "https://tracker.gg",
-            "pragma": "no-cache",
-            "priority": "u=1, i",
-            "referer": f"https://tracker.gg/valorant/profile/riot/{encoded_riot_id}/overview",
-            "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-site",
-            "user-agent": self.get_random_user_agent()
-        }
+        headers = get_api_headers(riot_id)
         
         # Define endpoints with priorities
         all_endpoints = {
-            "v1_competitive_aggregated": f"{base_url}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=competitive&source=web",
-            "v1_premier_aggregated": f"{base_url}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=premier&source=web",
-            "v1_unrated_aggregated": f"{base_url}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=unrated&source=web",
-            "v2_competitive_playlist": f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=competitive&source=web",
-            "v2_premier_playlist": f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=premier&source=web",
-            "v2_unrated_playlist": f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=unrated&source=web",
-            "v2_deathmatch_playlist": f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=deathmatch&source=web",
-            "v2_loadout_segments": f"{base_url}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/loadout?source=web"
+            "v1_competitive_aggregated": f"{TRACKER_API_BASE_URL}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=competitive&source=web",
+            "v1_premier_aggregated": f"{TRACKER_API_BASE_URL}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=premier&source=web",
+            "v1_unrated_aggregated": f"{TRACKER_API_BASE_URL}/api/v1/valorant/standard/profile/riot/{encoded_riot_id}/aggregated?playlist=unrated&source=web",
+            "v2_competitive_playlist": f"{TRACKER_API_BASE_URL}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=competitive&source=web",
+            "v2_premier_playlist": f"{TRACKER_API_BASE_URL}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=premier&source=web",
+            "v2_unrated_playlist": f"{TRACKER_API_BASE_URL}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=unrated&source=web",
+            "v2_deathmatch_playlist": f"{TRACKER_API_BASE_URL}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/playlist?playlist=deathmatch&source=web",
+            "v2_loadout_segments": f"{TRACKER_API_BASE_URL}/api/v2/valorant/standard/profile/riot/{encoded_riot_id}/segments/loadout?source=web"
         }
         
         # Filter endpoints based on checkpoint and priority
@@ -342,7 +443,7 @@ class EnhancedAntiDetectionScraper:
         with FlareSolverrClient(self.flaresolverr_url) as client:
             # Create session with random user agent and optional proxy
             session_params = {
-                "user_agent": self.get_random_user_agent()
+                "user_agent": get_random_user_agent()
             }
             if proxy:
                 session_params["proxy"] = proxy
@@ -384,7 +485,7 @@ class EnhancedAntiDetectionScraper:
                     }
         
         # Update checkpoint
-        checkpoint.last_update = datetime.utcnow()
+        checkpoint.last_update = get_current_datetime()
         if successful_fetches == 0:
             checkpoint.retry_count += 1
         else:
@@ -392,7 +493,7 @@ class EnhancedAntiDetectionScraper:
         
         return {
             "riot_id": riot_id,
-            "update_timestamp": datetime.utcnow().isoformat(),
+            "update_timestamp": get_current_timestamp(),
             "checkpoint_mode": checkpoint_only_recent,
             "endpoints": results,
             "summary": {
@@ -409,6 +510,41 @@ class EnhancedAntiDetectionScraper:
                 "retry_count": checkpoint.retry_count
             }
         }
+    
+    def get_complete_player_data(self, riot_id: str) -> Dict[str, Any]:
+        """
+        Get complete player data including both web scraping and API data.
+        
+        Args:
+            riot_id: Player's Riot ID (username#tag)
+            
+        Returns:
+            Combined player data
+        """
+        
+        result = create_success_response(riot_id, {
+            "scraping_timestamp": time.time(),
+            "web_data": {},
+            "api_data": {}
+        })
+        
+        try:
+            # Get web scraping data
+            logger.info(f"Scraping web data for {riot_id}")
+            html_content = self.get_player_profile_page(riot_id)
+            if html_content:
+                result["web_data"] = self.parse_player_overview(html_content)
+            else:
+                result["web_data"] = {"error": "Failed to get profile page"}
+            
+            # Get API data
+            logger.info(f"Capturing API data for {riot_id}")
+            result["api_data"] = self.get_player_api_data(riot_id)
+            
+        except Exception as e:
+            return create_error_response(riot_id, str(e))
+        
+        return result
     
     async def bulk_smart_update(self, 
                               riot_ids: List[str], 
@@ -451,18 +587,74 @@ class EnhancedAntiDetectionScraper:
         processed_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                processed_results.append({
-                    "riot_id": players_to_update[i],
-                    "status": "error",
-                    "error": str(result)
-                })
+                processed_results.append(
+                    create_error_response(players_to_update[i], str(result))
+                )
             else:
                 processed_results.append(result)
         
         return processed_results
+    
+    def test_connection(self) -> bool:
+        """
+        Test if the scraper can connect to tracker.gg.
+        
+        Returns:
+            True if connection successful, False otherwise
+        """
+        
+        try:
+            with FlareSolverrClient(self.flaresolverr_url) as client:
+                result = client.get_request(TRACKER_WEB_BASE_URL)
+                solution = result.get("solution", {})
+                return solution.get("status") == 200
+        except Exception as e:
+            logger.error(f"Connection test failed: {e}")
+            return False
 
 
-# API endpoint for enhanced updating
+# Convenience functions for backward compatibility
+def scrape_player(riot_id: str, 
+                 flaresolverr_url: str = "http://localhost:8191",
+                 output_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Convenience function to scrape a single player.
+    
+    Args:
+        riot_id: Player's Riot ID
+        flaresolverr_url: FlareSolverr service URL
+        output_file: Optional file to save results
+        
+    Returns:
+        Player data
+    """
+    
+    scraper = EnhancedValorantScraper(flaresolverr_url)
+    data = scraper.get_complete_player_data(riot_id)
+    
+    if output_file:
+        with open(output_file, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        logger.info(f"Saved data to {output_file}")
+    
+    return data
+
+
+def test_scraper_connection(flaresolverr_url: str = "http://localhost:8191") -> bool:
+    """
+    Test scraper connection.
+    
+    Args:
+        flaresolverr_url: FlareSolverr service URL
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    
+    scraper = EnhancedValorantScraper(flaresolverr_url)
+    return scraper.test_connection()
+
+
 async def enhanced_update_player_data(riot_id: str) -> Dict[str, Any]:
     """
     Enhanced update function for use in API endpoints.
@@ -473,14 +665,14 @@ async def enhanced_update_player_data(riot_id: str) -> Dict[str, Any]:
     Returns:
         Update result
     """
-    scraper = EnhancedAntiDetectionScraper()
+    scraper = EnhancedValorantScraper()
     
     try:
         result = await scraper.smart_update_player(riot_id, checkpoint_only_recent=True)
         
         # Save successful data to files for processing
         if result["summary"]["successful"] > 0:
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = get_current_datetime().strftime("%Y%m%d_%H%M%S")
             output_file = Path(f"data/enhanced_update_{riot_id.replace('#', '_')}_{timestamp}.json")
             output_file.parent.mkdir(exist_ok=True)
             
@@ -493,9 +685,66 @@ async def enhanced_update_player_data(riot_id: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Enhanced update failed for {riot_id}: {e}")
-        return {
-            "riot_id": riot_id,
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        } 
+        return create_error_response(riot_id, str(e))
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Enhanced Valorant tracker.gg scraper")
+    parser.add_argument("--riot-id", help="Riot ID to scrape (e.g., 'player#1234')")
+    parser.add_argument("--flaresolverr-url", default="http://localhost:8191", help="FlareSolverr URL")
+    parser.add_argument("--output", help="Output file for scraped data")
+    parser.add_argument("--test-connection", action="store_true", help="Test connection only")
+    parser.add_argument("--api-only", action="store_true", help="Only capture API data")
+    parser.add_argument("--web-only", action="store_true", help="Only scrape web data")
+    parser.add_argument("--smart-update", action="store_true", help="Use smart update with anti-detection")
+    parser.add_argument("--bulk", nargs="+", help="Multiple Riot IDs for bulk update")
+    
+    args = parser.parse_args()
+    
+    if args.test_connection:
+        success = test_scraper_connection(args.flaresolverr_url)
+        print(f"Connection test: {'✓ Success' if success else '✗ Failed'}")
+        exit(0 if success else 1)
+    
+    if not args.riot_id and not args.bulk:
+        print("Please provide --riot-id, --bulk, or --test-connection")
+        exit(1)
+    
+    scraper = EnhancedValorantScraper(args.flaresolverr_url)
+    
+    async def main():
+        if args.bulk:
+            results = await scraper.bulk_smart_update(args.bulk, max_concurrent=2)
+            for result in results:
+                print(f"{result['riot_id']}: {result['status']}")
+        elif args.api_only:
+            data = scraper.get_player_api_data(args.riot_id)
+            print(f"API capture complete for {args.riot_id}")
+        elif args.web_only:
+            html = scraper.get_player_profile_page(args.riot_id)
+            if html:
+                data = scraper.parse_player_overview(html)
+                print(f"Web scraping complete for {args.riot_id}")
+            else:
+                print("Failed to get profile page")
+                exit(1)
+        elif args.smart_update:
+            data = await scraper.smart_update_player(args.riot_id)
+            print(f"Smart update complete for {args.riot_id}")
+        else:
+            data = scraper.get_complete_player_data(args.riot_id)
+            print(f"Complete data capture for {args.riot_id}")
+        
+        if args.output and 'data' in locals():
+            with open(args.output, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+            print(f"Saved to {args.output}")
+        
+        # Print summary for API results
+        if 'data' in locals() and "api_data" in data and "summary" in data["api_data"]:
+            summary = data["api_data"]["summary"]
+            print(f"API Success rate: {summary['successful']}/{summary['total_endpoints']}")
+    
+    asyncio.run(main()) 

@@ -680,7 +680,7 @@ async def enhanced_update_player(
     """Enhanced update player data using browser-based API interception."""
     try:
         # Import the enhanced update system
-        from ..ingest.browser_tracker import enhanced_update_player_data
+        from ..ingest.enhanced_scraper import enhanced_update_player_data
         
         riot_id = validate_riot_id(riot_id)
         
@@ -822,7 +822,7 @@ async def bulk_update_players(
 ):
     """Bulk update multiple players using browser-based interception."""
     try:
-        from ..ingest.browser_tracker import EnhancedTrackerUpdater
+        from ..ingest.enhanced_scraper import EnhancedValorantScraper
         
         # Validate all riot IDs
         validated_ids = []
@@ -837,9 +837,9 @@ async def bulk_update_players(
         
         logger.info(f"Starting bulk browser-based update for {len(validated_ids)} players")
         
-        # Use the enhanced updater for bulk operations
-        updater = EnhancedTrackerUpdater()
-        results = await updater.bulk_update_players(
+        # Use the enhanced scraper for bulk operations
+        scraper = EnhancedValorantScraper()
+        results = await scraper.bulk_smart_update(
             validated_ids, 
             max_concurrent=min(max_concurrent, 3)  # Limit to prevent overload
         )
@@ -853,9 +853,9 @@ async def bulk_update_players(
         for result in results:
             if result.get("status") == "success":
                 try:
-                    from ..ingest.improved_data_loader import ImprovedTrackerDataLoader
+                    from ..ingest.unified_data_loader import UnifiedTrackerDataLoader
                     
-                    loader = ImprovedTrackerDataLoader()
+                    loader = UnifiedTrackerDataLoader()
                     # The data files are auto-created by the updater
                     # They will be picked up by the next data loading cycle
                     loaded_count += 1
@@ -964,7 +964,7 @@ async def test_update_system(
         test_riot_id = validate_riot_id(test_riot_id)
         
         # Run a test update
-        from ..ingest.browser_tracker import enhanced_update_player_data
+        from ..ingest.enhanced_scraper import enhanced_update_player_data
         
         start_time = datetime.utcnow()
         result = await enhanced_update_player_data(test_riot_id)
