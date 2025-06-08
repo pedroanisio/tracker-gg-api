@@ -38,7 +38,7 @@ class EnhancedAntiDetectionScraper:
     """Enhanced scraper with anti-detection and smart update strategies."""
     
     def __init__(self, 
-                 flaresolverr_url: str = "http://localhost:8191",
+                 flaresolverr_url: str = "http://tracker-flaresolverr:8191",
                  use_proxy_rotation: bool = False,
                  proxy_list: Optional[List[str]] = None):
         """

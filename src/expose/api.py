@@ -685,46 +685,83 @@ async def enhanced_update_player(
         # Use enhanced scraper
         result = await enhanced_update_player_data(riot_id)
         
-        if result.get("summary", {}).get("successful", 0) > 0:
-            # Process the updated data immediately
-            from ..ingest.data_loader import TrackerDataLoader
-            
-            # Save to temporary file for processing
-            temp_file = PathLib(f"data/temp_update_{riot_id.replace('#', '_')}.json")
-            temp_file.parent.mkdir(exist_ok=True)
-            
-            # Convert to expected format for data loader
-            loader_format = {
-                "riot_id": riot_id,
-                "endpoints": result["endpoints"],
-                "capture_timestamp": result["update_timestamp"]
-            }
-            
-            with open(temp_file, 'w') as f:
-                json.dump(loader_format, f, indent=2, default=str)
-            
-            # Load into database
-            with get_session() as session:
-                loader = TrackerDataLoader()
-                loader.load_file(session, temp_file)
-            
-            # Clean up temp file
-            temp_file.unlink(missing_ok=True)
-            
+        # Check if result has the expected structure
+        if not isinstance(result, dict):
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid response from enhanced scraper"
+            )
+        
+        # Check for errors in the result
+        if result.get("status") == "error":
             return {
-                "status": "success",
-                "message": f"Successfully updated {riot_id}",
-                "update_summary": result["summary"],
-                "anti_detection": result["anti_detection"],
-                "timestamp": result["update_timestamp"]
+                "status": "failed",
+                "message": f"Enhanced scraper error for {riot_id}",
+                "error_details": result.get("error", "Unknown scraper error"),
+                "timestamp": result.get("timestamp", datetime.utcnow().isoformat()),
+                "update_summary": {
+                    "total_endpoints": 0,
+                    "successful": 0,
+                    "failed": 0
+                }
             }
+        
+        # Get summary with safe defaults
+        summary = result.get("summary", {})
+        successful_count = summary.get("successful", 0)
+        
+        if successful_count > 0:
+            try:
+                # Process the updated data immediately
+                from ..ingest.data_loader import TrackerDataLoader
+                
+                # Save to temporary file for processing
+                temp_file = PathLib(f"data/temp_update_{riot_id.replace('#', '_')}.json")
+                temp_file.parent.mkdir(exist_ok=True)
+                
+                # Convert to expected format for data loader
+                loader_format = {
+                    "riot_id": riot_id,
+                    "endpoints": result.get("endpoints", {}),
+                    "capture_timestamp": result.get("update_timestamp", datetime.utcnow().isoformat())
+                }
+                
+                with open(temp_file, 'w') as f:
+                    json.dump(loader_format, f, indent=2, default=str)
+                
+                # Load into database
+                with get_session() as session:
+                    loader = TrackerDataLoader()
+                    loader.load_file(session, temp_file)
+                
+                # Clean up temp file
+                temp_file.unlink(missing_ok=True)
+                
+                return {
+                    "status": "success",
+                    "message": f"Successfully updated {riot_id}",
+                    "update_summary": summary,
+                    "anti_detection": result.get("anti_detection", {}),
+                    "timestamp": result.get("update_timestamp", datetime.utcnow().isoformat())
+                }
+            except Exception as load_error:
+                logger.error(f"Error loading updated data for {riot_id}: {load_error}")
+                return {
+                    "status": "partial_success",
+                    "message": f"Data fetched but failed to load into database for {riot_id}",
+                    "update_summary": summary,
+                    "anti_detection": result.get("anti_detection", {}),
+                    "error_details": f"Database load error: {str(load_error)}",
+                    "timestamp": result.get("update_timestamp", datetime.utcnow().isoformat())
+                }
         else:
             return {
                 "status": "failed",
                 "message": f"Failed to fetch new data for {riot_id}",
-                "update_summary": result["summary"],
+                "update_summary": summary,
                 "error_details": result.get("error", "No successful endpoints"),
-                "timestamp": result["update_timestamp"]
+                "timestamp": result.get("update_timestamp", datetime.utcnow().isoformat()),
+                "anti_detection": result.get("anti_detection", {})
             }
             
     except Exception as e:

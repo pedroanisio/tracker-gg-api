@@ -2,14 +2,24 @@ FROM python:3.11-slim
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y libpq-dev build-essential postgresql-client && \
+    apt-get install -y libpq-dev build-essential postgresql-client curl && \
     rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-# Copy and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy project configuration
+COPY pyproject.toml ./
+
+# Create virtual environment and install dependencies
+RUN uv venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install dependencies
+RUN uv pip install -e .
 
 # Copy and make entrypoint script executable
 COPY docker-entrypoint.sh /usr/local/bin/

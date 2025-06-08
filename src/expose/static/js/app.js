@@ -471,41 +471,10 @@ class ValorantStatsApp {
             }
         });
         
-        // Setup event delegation for prompt buttons
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('prompt-btn')) {
-                e.preventDefault();
-                const message = this.getPromptMessage(e.target);
-                if (message) {
-                    this.sendContextualMessage(message);
-                }
-            }
-        });
+
     }
     
-    getPromptMessage(button) {
-        // Extract message from button based on its icon or content
-        const icon = button.querySelector('i');
-        if (!icon) return null;
-        
-        const iconClass = icon.className;
-        
-        if (iconClass.includes('fa-chart-bar')) {
-            return 'Analyze this player\'s overall performance';
-        } else if (iconClass.includes('fa-balance-scale')) {
-            return 'What are this player\'s strengths and weaknesses?';
-        } else if (iconClass.includes('fa-arrow-up')) {
-            return 'How can this player improve their gameplay?';
-        } else if (iconClass.includes('fa-clock')) {
-            return 'Compare this player\'s recent performance to their overall stats';
-        } else if (iconClass.includes('fa-target')) {
-            return 'What playlist should this player focus on?';
-        } else if (iconClass.includes('fa-crosshairs')) {
-            return 'Analyze this player\'s weapon performance and loadout choices';
-        }
-        
-        return null;
-    }
+
 
     addWelcomeMessage() {
         const welcomeMessage = `
@@ -823,13 +792,34 @@ class ValorantStatsApp {
                 
             } else {
                 // Show failure details
-                const summary = result.update_summary;
-                this.addChatMessage('system', `⚠️ Update partially failed for ${this.currentPlayer}
+                const summary = result.update_summary || { successful: 0, total_endpoints: 0 };
+                const errorDetails = result.error_details || 'No new data available';
                 
-📊 Results: ${summary.successful}/${summary.total_endpoints} endpoints successful
-❌ Issue: ${result.error_details || 'No new data available'}
-
-The system used smart checkpointing to avoid being detected, but couldn't fetch fresh data. This might be temporary - try again in a few minutes.`);
+                let errorMessage = `⚠️ Update failed for ${this.currentPlayer}\n\n`;
+                errorMessage += `📊 Results: ${summary.successful}/${summary.total_endpoints} endpoints successful\n`;
+                errorMessage += `❌ Issue: ${errorDetails}\n\n`;
+                
+                // Provide specific guidance based on error type
+                if (errorDetails.includes('Connection refused') || errorDetails.includes('port 8191')) {
+                    errorMessage += `🔧 **FlareSolverr Issue Detected**\n`;
+                    errorMessage += `The system needs FlareSolverr to bypass Cloudflare protection.\n\n`;
+                    errorMessage += `**To fix this:**\n`;
+                    errorMessage += `1. Start FlareSolverr container:\n`;
+                    errorMessage += `   \`docker run -d --name flaresolverr -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest\`\n`;
+                    errorMessage += `2. Wait 30 seconds for it to start\n`;
+                    errorMessage += `3. Try the update again\n\n`;
+                    errorMessage += `**Alternative:** Use existing data and wait for automatic updates.`;
+                } else if (errorDetails.includes('rate limit') || errorDetails.includes('429')) {
+                    errorMessage += `🛡️ **Rate Limited**\n`;
+                    errorMessage += `The system was temporarily blocked to avoid detection.\n`;
+                    errorMessage += `This is normal anti-detection behavior.\n\n`;
+                    errorMessage += `**Try again in 5-10 minutes.**`;
+                } else {
+                    errorMessage += `The system used smart anti-detection techniques but couldn't fetch fresh data.\n`;
+                    errorMessage += `This might be temporary - try again in a few minutes.`;
+                }
+                
+                this.addChatMessage('system', errorMessage);
             }
             
         } catch (error) {
@@ -851,20 +841,10 @@ Please try again in a few minutes.`);
     }
 
     sendContextualMessage(message) {
-        console.log('sendContextualMessage called with:', message);
-        try {
-            // Set the message in the input and send it
-            const chatInput = document.getElementById('chatInput');
-            if (!chatInput) {
-                console.error('Chat input element not found');
-                return;
-            }
-            
-            chatInput.value = message;
-            this.sendChatMessage();
-        } catch (error) {
-            console.error('Error in sendContextualMessage:', error);
-        }
+        // Set the message in the input and send it
+        const chatInput = document.getElementById('chatInput');
+        chatInput.value = message;
+        this.sendChatMessage();
     }
 
     // Override the search method to handle UI cleanup
