@@ -470,6 +470,41 @@ class ValorantStatsApp {
                 this.sendChatMessage();
             }
         });
+        
+        // Setup event delegation for prompt buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('prompt-btn')) {
+                e.preventDefault();
+                const message = this.getPromptMessage(e.target);
+                if (message) {
+                    this.sendContextualMessage(message);
+                }
+            }
+        });
+    }
+    
+    getPromptMessage(button) {
+        // Extract message from button based on its icon or content
+        const icon = button.querySelector('i');
+        if (!icon) return null;
+        
+        const iconClass = icon.className;
+        
+        if (iconClass.includes('fa-chart-bar')) {
+            return 'Analyze this player\'s overall performance';
+        } else if (iconClass.includes('fa-balance-scale')) {
+            return 'What are this player\'s strengths and weaknesses?';
+        } else if (iconClass.includes('fa-arrow-up')) {
+            return 'How can this player improve their gameplay?';
+        } else if (iconClass.includes('fa-clock')) {
+            return 'Compare this player\'s recent performance to their overall stats';
+        } else if (iconClass.includes('fa-target')) {
+            return 'What playlist should this player focus on?';
+        } else if (iconClass.includes('fa-crosshairs')) {
+            return 'Analyze this player\'s weapon performance and loadout choices';
+        }
+        
+        return null;
     }
 
     addWelcomeMessage() {
