@@ -89,6 +89,10 @@ class ValorantStatsApp {
             // Load timeline data
             await this.updateTimeline();
 
+            // Show update button and context prompts
+            this.showUpdateButton();
+            this.showPlayerContextPrompts(riotId);
+
             this.hideLoading();
             this.showPlayerData();
 
@@ -697,6 +701,146 @@ class ValorantStatsApp {
         
         if (enabled) {
             chatInput.focus();
+        }
+    }
+
+    // ===============================
+    // UPDATE AND CONTEXT FUNCTIONALITY
+    // ===============================
+
+    showUpdateButton() {
+        const updateBtn = document.getElementById('updateDataBtn');
+        updateBtn.classList.remove('hidden');
+    }
+
+    hideUpdateButton() {
+        const updateBtn = document.getElementById('updateDataBtn');
+        updateBtn.classList.add('hidden');
+    }
+
+    showPlayerContextPrompts(riotId) {
+        const contextPrompts = document.getElementById('playerContextPrompts');
+        const contextPlayerName = document.getElementById('contextPlayerName');
+        
+        contextPlayerName.textContent = riotId;
+        contextPrompts.classList.remove('hidden');
+        
+        // Update chat input placeholder
+        const chatInput = document.getElementById('chatInput');
+        chatInput.placeholder = `Ask about ${riotId}'s performance...`;
+    }
+
+    hidePlayerContextPrompts() {
+        const contextPrompts = document.getElementById('playerContextPrompts');
+        contextPrompts.classList.add('hidden');
+        
+        // Reset chat input placeholder
+        const chatInput = document.getElementById('chatInput');
+        chatInput.placeholder = 'Ask the AI about player performance...';
+    }
+
+    async updatePlayerData() {
+        if (!this.currentPlayer) return;
+        
+        const updateBtn = document.getElementById('updateDataBtn');
+        const originalText = updateBtn.innerHTML;
+        
+        try {
+            // Show loading state
+            updateBtn.disabled = true;
+            updateBtn.classList.add('loading');
+            updateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Updating...';
+            
+            // Re-search the current player (this will refresh all data)
+            await this.searchPlayer(this.currentPlayer);
+            
+            // Show success message in chat
+            this.addChatMessage('system', `✅ Successfully updated data for ${this.currentPlayer}`);
+            
+        } catch (error) {
+            console.error('Update error:', error);
+            this.addChatMessage('system', `❌ Failed to update data: ${error.message}`);
+        } finally {
+            // Reset button state
+            updateBtn.disabled = false;
+            updateBtn.classList.remove('loading');
+            updateBtn.innerHTML = originalText;
+        }
+    }
+
+    sendContextualMessage(message) {
+        // Set the message in the input and send it
+        const chatInput = document.getElementById('chatInput');
+        chatInput.value = message;
+        this.sendChatMessage();
+    }
+
+    // Override the search method to handle UI cleanup
+    async searchPlayer(riotId = null) {
+        if (!riotId) {
+            riotId = document.getElementById('riotId').value.trim();
+        }
+        
+        if (!riotId) {
+            this.showError('Please enter a valid Riot ID');
+            return;
+        }
+
+        // Hide previous data and errors
+        this.hideError();
+        this.hidePlayerData();
+        this.hideUpdateButton();
+        this.hidePlayerContextPrompts();
+        this.showLoading();
+
+        try {
+            // Fetch all player data in parallel
+            const [playerInfo, premierData, playlistsData, loadoutsData] = await Promise.allSettled([
+                this.fetchPlayerInfo(riotId),
+                this.fetchPremierData(riotId),
+                this.fetchPlaylistsData(riotId),
+                this.fetchLoadoutsData(riotId)
+            ]);
+
+            this.currentPlayer = riotId;
+            
+            // Display the data
+            if (playerInfo.status === 'fulfilled') {
+                this.displayPlayerInfo(playerInfo.value);
+            }
+
+            if (premierData.status === 'fulfilled') {
+                this.displayPremierData(premierData.value);
+            } else {
+                this.displayNoPremierData();
+            }
+
+            if (playlistsData.status === 'fulfilled') {
+                this.displayPlaylistsData(playlistsData.value);
+                this.populateTimelinePlaylistOptions(playlistsData.value);
+            } else {
+                this.displayNoPlaylistsData();
+            }
+
+            if (loadoutsData.status === 'fulfilled') {
+                this.displayLoadoutsData(loadoutsData.value);
+            } else {
+                this.displayNoLoadoutsData();
+            }
+
+            // Load timeline data
+            await this.updateTimeline();
+
+            // Show update button and context prompts
+            this.showUpdateButton();
+            this.showPlayerContextPrompts(riotId);
+
+            this.hideLoading();
+            this.showPlayerData();
+
+        } catch (error) {
+            this.hideLoading();
+            this.showError(`Error loading player data: ${error.message}`);
         }
     }
 }

@@ -747,6 +747,107 @@ body {
     51%, 100% { opacity: 0; }
 }
 
+/* Section header with update button */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.section-header h2 {
+    margin: 0;
+}
+
+.update-btn {
+    background: linear-gradient(135deg, var(--primary-color), #ff4d6d);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(255, 70, 85, 0.3);
+}
+
+.update-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 70, 85, 0.4);
+}
+
+.update-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.update-btn i {
+    margin-right: 6px;
+}
+
+.update-btn.loading i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Player context prompts */
+.context-prompts {
+    background: rgba(255, 70, 85, 0.05);
+    border: 1px solid rgba(255, 70, 85, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.context-prompts p {
+    margin: 0 0 12px 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.context-prompts strong {
+    color: var(--primary-color);
+}
+
+.prompt-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 8px;
+}
+
+.prompt-btn {
+    background: rgba(255, 70, 85, 0.1);
+    border: 1px solid rgba(255, 70, 85, 0.3);
+    color: var(--text-primary);
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+}
+
+.prompt-btn:hover {
+    background: rgba(255, 70, 85, 0.15);
+    border-color: rgba(255, 70, 85, 0.5);
+    transform: translateY(-1px);
+}
+
+.prompt-btn i {
+    color: var(--primary-color);
+    width: 16px;
+    text-align: center;
+}
+
 /* Mobile responsiveness for chat */
 @media (max-width: 768px) {
     .ai-chat .chat-container {
@@ -770,5 +871,25 @@ body {
     .tool-indicator {
         padding: 6px 10px;
         font-size: 0.8rem;
+    }
+    
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .update-btn {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+    
+    .prompt-buttons {
+        grid-template-columns: 1fr;
+    }
+    
+    .prompt-btn {
+        padding: 12px;
+        font-size: 0.9rem;
     }
 } 
