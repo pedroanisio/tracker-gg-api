@@ -557,6 +557,29 @@ async def get_database_stats(session: Session = Depends(get_session)):
         "generated_at": datetime.utcnow().isoformat()
     }
 
+@app.get("/admin/initialization-status", tags=["Admin"])
+async def get_initialization_status():
+    """Get current user initialization status."""
+    try:
+        from ..ingest.startup_initializer import get_startup_status
+        from ..ingest.user_manager import get_tracked_users
+        
+        status = get_startup_status()
+        tracked_users = get_tracked_users()
+        
+        return {
+            "initialization": status,
+            "tracked_users": tracked_users,
+            "auto_init_enabled": os.getenv("AUTO_INIT_USERS", "true").lower() == "true",
+            "generated_at": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting initialization status: {e}")
+        return {
+            "error": str(e),
+            "generated_at": datetime.utcnow().isoformat()
+        }
+
 # ===============================
 # AI AGENT ENDPOINTS
 # ===============================
@@ -1084,6 +1107,24 @@ async def startup_event():
     logger.info("Starting Tracker.gg Valorant API")
     logger.info("API Documentation available at /docs")
     logger.info("ReDoc documentation available at /redoc")
+    
+    # Check if user initialization should be run
+    auto_init = os.getenv("AUTO_INIT_USERS", "true").lower() == "true"
+    
+    if auto_init:
+        logger.info("🚀 Auto-initialization enabled - starting user data loading...")
+        
+        # Import here to avoid circular imports
+        from ..ingest.startup_initializer import initialize_users_in_background
+        
+        # Start user initialization in background (non-blocking)
+        asyncio.create_task(initialize_users_in_background(max_concurrent=1))
+        
+        logger.info("✅ User initialization started in background")
+        logger.info("💡 API is available immediately - user data will load progressively")
+    else:
+        logger.info("⚠️  Auto-initialization disabled (AUTO_INIT_USERS=false)")
+        logger.info("💡 Use 'python -m src ingest --init-all-users' to load user data manually")
 
 
 if __name__ == "__main__":

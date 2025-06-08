@@ -15,51 +15,65 @@ logger = logging.getLogger(__name__)
 
 def run_ingestion(args):
     """Run data ingestion operations."""
+    import asyncio
     from .ingest.data_loader import load_data_from_directory, load_single_file, init_db
-    from .ingest.flaresolverr_client import test_flaresolverr_connection, capture_player_data
-    from .ingest.scraper import scrape_player, test_scraper_connection
+    from .ingest.user_manager import user_manager
+    from .ingest.startup_initializer import initialize_all_users_at_startup
     
     if args.init_db:
         init_db()
         print("✓ Database initialized successfully!")
         return
     
-    if args.test_flaresolverr:
-        success = test_flaresolverr_connection(args.flaresolverr_url)
-        print(f"FlareSolverr test: {'✓ Success' if success else '✗ Failed'}")
+    if args.init_all_users:
+        print("🚀 Initializing all tracked users...")
+        
+        async def run_init():
+            max_concurrent = args.max_concurrent or 2
+            print(f"Max concurrent operations: {max_concurrent}")
+            
+            results = await initialize_all_users_at_startup(max_concurrent)
+            
+            if results:
+                successful = len([r for r in results.values() if r.get("status") != "error"])
+                failed = len(results) - successful
+                print(f"✓ Initialization completed: {successful} successful, {failed} failed")
+                
+                # Show detailed results
+                for riot_id, result in results.items():
+                    if result.get("status") == "error":
+                        print(f"  ❌ {riot_id}: {result.get('error', 'Unknown error')}")
+                    else:
+                        duration = result.get("duration_minutes", 0)
+                        endpoints = result.get("successful_endpoints", 0)
+                        print(f"  ✅ {riot_id}: {endpoints} endpoints loaded in {duration:.1f} minutes")
+            else:
+                print("⚠️  No users configured for initialization")
+        
+        asyncio.run(run_init())
         return
     
-    if args.test_scraper:
-        success = test_scraper_connection(args.flaresolverr_url)
-        print(f"Scraper test: {'✓ Success' if success else '✗ Failed'}")
+    if args.list_users:
+        users = user_manager.get_tracked_users()
+        print(f"📋 Tracked users ({len(users)}):")
+        for user in users:
+            print(f"  • {user}")
         return
     
-    if args.scrape_player:
-        print(f"Scraping player: {args.scrape_player}")
-        data = scrape_player(
-            args.scrape_player, 
-            args.flaresolverr_url,
-            args.output_file
-        )
-        if data.get("status") == "success":
-            print("✓ Scraping completed successfully!")
-            if "api_data" in data and "summary" in data["api_data"]:
-                summary = data["api_data"]["summary"]
-                print(f"API Success rate: {summary['successful']}/{summary['total_endpoints']}")
+    if args.add_user:
+        if user_manager.add_user(args.add_user):
+            print(f"✓ Added user: {args.add_user}")
         else:
-            print(f"✗ Scraping failed: {data.get('error', 'Unknown error')}")
+            print(f"⚠️  User {args.add_user} already tracked or failed to add")
         return
     
-    if args.capture_player:
-        print(f"Capturing API data for player: {args.capture_player}")
-        data = capture_player_data(
-            args.capture_player,
-            args.flaresolverr_url,
-            args.output_file
-        )
-        summary = data.get("summary", {})
-        print(f"✓ Capture completed: {summary.get('successful', 0)}/{summary.get('total_endpoints', 0)} endpoints")
+    if args.remove_user:
+        if user_manager.remove_user(args.remove_user):
+            print(f"✓ Removed user: {args.remove_user}")
+        else:
+            print(f"⚠️  User {args.remove_user} not found or failed to remove")
         return
+    
     
     if args.load_file:
         print(f"Loading file: {args.load_file}")
@@ -103,16 +117,15 @@ Examples:
   # Initialize database
   python -m src ingest --init-db
   
-  # Test connections
-  python -m src ingest --test-flaresolverr
-  python -m src ingest --test-scraper
+  # User management
+  python -m src ingest --list-users
+  python -m src ingest --add-user "TenZ#tenz"
+  python -m src ingest --init-all-users --max-concurrent 2
   
-  # Scrape a player
-  python -m src ingest --scrape-player "apolloZ#sun" --output-file "apolloZ_data.json"
   
   # Load data from files
   python -m src ingest --load-directory "./data"
-  python -m src ingest --load-file "capture_apolloZ_sun_123456.json"
+  python -m src ingest --load-file "capture_appoloZ_sun_123456.json"
   
   # Start API server
   python -m src api
@@ -125,14 +138,13 @@ Examples:
     # Ingestion subcommand
     ingest_parser = subparsers.add_parser('ingest', help='Data ingestion operations')
     ingest_parser.add_argument('--init-db', action='store_true', help='Initialize database')
-    ingest_parser.add_argument('--test-flaresolverr', action='store_true', help='Test FlareSolverr connection')
-    ingest_parser.add_argument('--test-scraper', action='store_true', help='Test scraper connection')
-    ingest_parser.add_argument('--scrape-player', help='Scrape a specific player (username#tag)')
-    ingest_parser.add_argument('--capture-player', help='Capture API data for a player (username#tag)')
+    ingest_parser.add_argument('--init-all-users', action='store_true', help='Initialize all tracked users (startup mode)')
+    ingest_parser.add_argument('--max-concurrent', type=int, default=2, help='Max concurrent user initializations')
+    ingest_parser.add_argument('--list-users', action='store_true', help='List all tracked users')
+    ingest_parser.add_argument('--add-user', help='Add a user to tracking list (username#tag)')
+    ingest_parser.add_argument('--remove-user', help='Remove a user from tracking list (username#tag)')
     ingest_parser.add_argument('--load-file', help='Load a single JSON file')
     ingest_parser.add_argument('--load-directory', help='Load all JSON files from directory')
-    ingest_parser.add_argument('--flaresolverr-url', default='http://localhost:8191', help='FlareSolverr URL')
-    ingest_parser.add_argument('--output-file', help='Output file for scraped/captured data')
     
     # API subcommand
     api_parser = subparsers.add_parser('api', help='Start API server')
