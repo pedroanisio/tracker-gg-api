@@ -5,13 +5,15 @@ Provides REST endpoints for accessing ingested player statistics.
 
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, AsyncGenerator
 from pydantic import BaseModel
 import logging
+import json
+import asyncio
 from datetime import datetime
 import os
 
@@ -577,6 +579,46 @@ async def chat_with_agent(chat_request: ChatRequest):
         
     except Exception as e:
         logger.error(f"Error in AI chat: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI agent error: {str(e)}"
+        )
+
+@app.post("/ai/chat/stream", tags=["AI Agent"])
+async def chat_with_agent_stream(chat_request: ChatRequest):
+    """Chat with the AI agent about player performance with streaming response."""
+    try:
+        # Import the agent
+        from ..ai_agent.anthropic_agent import get_agent
+        
+        agent = get_agent()
+        
+        async def generate_stream() -> AsyncGenerator[str, None]:
+            async for chunk in agent.chat_stream(
+                message=chat_request.message,
+                player_context=chat_request.player_context
+            ):
+                # Format as Server-Sent Events
+                data = json.dumps(chunk)
+                yield f"data: {data}\n\n"
+            
+            # Send final event to close connection
+            yield f"data: {json.dumps({'type': 'close'})}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Methods": "*"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in AI chat stream: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"AI agent error: {str(e)}"

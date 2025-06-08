@@ -673,6 +673,80 @@ body {
     font-weight: 600;
 }
 
+/* Streaming indicators */
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-style: italic;
+    opacity: 0.8;
+}
+
+.typing-indicator i {
+    animation: pulse 1.5s infinite ease-in-out;
+    font-size: 0.6em;
+}
+
+.tool-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: rgba(255, 70, 85, 0.1);
+    border: 1px solid rgba(255, 70, 85, 0.3);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--primary-color);
+}
+
+.tool-indicator i {
+    font-size: 0.8rem;
+}
+
+.error-message {
+    background-color: rgba(239, 68, 68, 0.1) !important;
+    border: 1px solid var(--error) !important;
+    color: var(--error) !important;
+}
+
+@keyframes pulse {
+    0%, 60%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    30% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Streaming text animation */
+.chat-message.assistant {
+    position: relative;
+}
+
+.chat-message.assistant:after {
+    content: '';
+    display: inline-block;
+    width: 2px;
+    height: 1.2em;
+    background: var(--primary-color);
+    animation: blink 1s infinite;
+    margin-left: 2px;
+    vertical-align: baseline;
+}
+
+.chat-message.assistant.complete:after {
+    display: none;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
 /* Mobile responsiveness for chat */
 @media (max-width: 768px) {
     .ai-chat .chat-container {
@@ -691,5 +765,10 @@ body {
     .chat-input-container input {
         padding: 10px 14px;
         font-size: 16px; /* Prevent zoom on iOS */
+    }
+    
+    .tool-indicator {
+        padding: 6px 10px;
+        font-size: 0.8rem;
     }
 } 

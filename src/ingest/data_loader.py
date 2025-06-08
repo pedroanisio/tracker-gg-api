@@ -131,39 +131,92 @@ class TrackerDataLoader:
         if not hasattr(player, '_was_existing'):  # New player
             self.stats["players_created"] += 1
         
-        # Process endpoints
-        endpoints = data.get("endpoints", {})
-        
-        for endpoint_name, endpoint_data in endpoints.items():
-            if endpoint_data.get("status") != "success":
-                continue
-                
-            api_data = endpoint_data.get("data", {})
+        # Check if this is the new direct API response format
+        if "data" in data and "original_filename" in data:
+            # This is a direct API response format
+            self._load_direct_api_response(session, player.id, data, file_path)
+        else:
+            # Process old nested endpoints format
+            endpoints = data.get("endpoints", {})
             
-            try:
-                if endpoint_name.startswith("v1_") and "aggregated" in endpoint_name:
-                    self._load_v1_aggregated_data(session, player.id, endpoint_name, api_data, file_path)
-                elif endpoint_name.startswith("v2_") and "playlist" in endpoint_name:
-                    self._load_v2_playlist_data(session, player.id, endpoint_name, api_data, file_path)
-                elif endpoint_name.startswith("v2_") and "loadout" in endpoint_name:
-                    self._load_v2_loadout_data(session, player.id, endpoint_name, api_data, file_path)
-                else:
-                    logger.warning(f"Unknown endpoint type: {endpoint_name}")
+            for endpoint_name, endpoint_data in endpoints.items():
+                if endpoint_data.get("status") != "success":
+                    continue
                     
-            except Exception as e:
-                logger.error(f"Failed to process endpoint {endpoint_name}: {e}")
-                continue
+                api_data = endpoint_data.get("data", {})
+                
+                try:
+                    if endpoint_name.startswith("v1_") and "aggregated" in endpoint_name:
+                        self._load_v1_aggregated_data(session, player.id, endpoint_name, api_data, file_path)
+                    elif endpoint_name.startswith("v2_") and "playlist" in endpoint_name:
+                        self._load_v2_playlist_data(session, player.id, endpoint_name, api_data, file_path)
+                    elif endpoint_name.startswith("v2_") and "loadout" in endpoint_name:
+                        self._load_v2_loadout_data(session, player.id, endpoint_name, api_data, file_path)
+                    else:
+                        logger.warning(f"Unknown endpoint type: {endpoint_name}")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to process endpoint {endpoint_name}: {e}")
+                    continue
+            
+            # Log successful ingestion (old format)
+            log_ingestion_operation(
+                session=session,
+                operation_type="file_load",
+                source=str(file_path),
+                player_riot_id=riot_id,
+                status="success",
+                records_processed=len(endpoints),
+                records_inserted=self.stats["segments_created"],
+                details=f"Loaded {len(endpoints)} endpoints"
+            )
+
+    def _load_direct_api_response(self, session: Session, player_id: int, 
+                                 data: Dict[str, Any], source_file: Path) -> None:
+        """Load data from direct API response format."""
         
-        # Log successful ingestion
+        original_filename = data.get("original_filename", "")
+        api_data = data.get("data", {})
+        
+        # Skip if no data found
+        if not api_data.get("found", False):
+            return
+        
+        # Determine endpoint type from original filename
+        if "v1_aggregated" in original_filename:
+            # Extract playlist from filename (e.g., "grammar_v1_aggregated_deathmatch_...")
+            parts = original_filename.split("_")
+            if len(parts) >= 3:
+                playlist = parts[2]  # Should be like "deathmatch", "competitive", etc.
+                endpoint_name = f"v1_{playlist}_aggregated"
+                self._load_v1_aggregated_data(session, player_id, endpoint_name, {"data": api_data}, source_file)
+        
+        elif "v2_playlist" in original_filename:
+            # Extract playlist from filename  
+            parts = original_filename.split("_")
+            if len(parts) >= 3:
+                playlist = parts[2]
+                endpoint_name = f"v2_{playlist}_playlist"
+                self._load_v2_playlist_data(session, player_id, endpoint_name, api_data, source_file)
+        
+        elif "v2_loadout" in original_filename:
+            # Loadout data
+            endpoint_name = "v2_loadout"
+            self._load_v2_loadout_data(session, player_id, endpoint_name, api_data, source_file)
+        
+        else:
+            logger.warning(f"Unknown API response type from filename: {original_filename}")
+        
+        # Log successful ingestion (new format)
         log_ingestion_operation(
             session=session,
             operation_type="file_load",
-            source=str(file_path),
-            player_riot_id=riot_id,
+            source=str(source_file),
+            player_riot_id=data.get("riot_id"),
             status="success",
-            records_processed=len(endpoints),
-            records_inserted=self.stats["segments_created"],
-            details=f"Loaded {len(endpoints)} endpoints"
+            records_processed=1,
+            records_inserted=self.stats.get("segments_created", 0),
+            details=f"Loaded direct API response: {original_filename}"
         )
     
     def _load_v1_aggregated_data(self, session: Session, player_id: int, 

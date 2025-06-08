@@ -7,16 +7,22 @@ class ValorantStatsApp {
     init() {
         this.bindEvents();
         this.setupEnterKeySearch();
+        this.setupChatInterface();
+        this.addWelcomeMessage();
     }
 
     bindEvents() {
         const searchBtn = document.getElementById('searchBtn');
         const timelineDays = document.getElementById('timelineDays');
         const timelinePlaylist = document.getElementById('timelinePlaylist');
+        const sendChatBtn = document.getElementById('sendChatBtn');
+        const resetChatBtn = document.getElementById('resetChatBtn');
 
         searchBtn.addEventListener('click', () => this.searchPlayer());
         timelineDays.addEventListener('change', () => this.updateTimeline());
         timelinePlaylist.addEventListener('change', () => this.updateTimeline());
+        sendChatBtn.addEventListener('click', () => this.sendChatMessage());
+        resetChatBtn.addEventListener('click', () => this.resetChat());
     }
 
     setupEnterKeySearch() {
@@ -446,6 +452,252 @@ class ValorantStatsApp {
 
     hidePlayerData() {
         document.getElementById('playerData').classList.add('hidden');
+    }
+
+    // ===============================
+    // CHAT FUNCTIONALITY
+    // ===============================
+
+    setupChatInterface() {
+        const chatInput = document.getElementById('chatInput');
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendChatMessage();
+            }
+        });
+    }
+
+    addWelcomeMessage() {
+        const welcomeMessage = `
+            Welcome! I'm your AI Valorant performance analyst. I can help you understand player statistics, identify improvement areas, and provide strategic insights.
+            
+            Try asking me:
+            • "Analyze [player#tag]'s performance"
+            • "What are the strengths and weaknesses of this player?"
+            • "How has their performance changed recently?"
+            • "What should they focus on to improve?"
+            
+            Search for a player first, then I'll have more context for detailed analysis!
+        `;
+        
+        this.addChatMessage('assistant', welcomeMessage);
+    }
+
+    async sendChatMessage() {
+        const chatInput = document.getElementById('chatInput');
+        const message = chatInput.value.trim();
+        
+        if (!message) return;
+        
+        // Clear input and add user message
+        chatInput.value = '';
+        this.addChatMessage('user', message);
+        
+        // Disable input while processing
+        this.setChatInputState(false);
+        
+        try {
+            // Use streaming endpoint
+            await this.streamChatResponse(message);
+            
+        } catch (error) {
+            console.error('Chat error:', error);
+            this.addChatMessage('system', `Error: ${error.message}. Please check your connection and try again.`);
+        } finally {
+            // Re-enable input
+            this.setChatInputState(true);
+        }
+    }
+
+    async streamChatResponse(message) {
+        let assistantMessageDiv = null;
+        let currentContent = '';
+        
+        // Create assistant message div for streaming
+        assistantMessageDiv = this.addChatMessage('assistant', '');
+        
+        // Add typing indicator
+        const typingIndicator = document.createElement('span');
+        typingIndicator.className = 'typing-indicator';
+        typingIndicator.innerHTML = '<i class="fas fa-circle"></i>';
+        assistantMessageDiv.appendChild(typingIndicator);
+        
+        try {
+            const response = await fetch('/ai/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    player_context: this.currentPlayer
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            if (data.type === 'text') {
+                                // Remove typing indicator if it exists
+                                if (typingIndicator && typingIndicator.parentNode) {
+                                    typingIndicator.remove();
+                                }
+                                
+                                // Append text content
+                                currentContent += data.content;
+                                assistantMessageDiv.innerHTML = this.formatMessageContent(currentContent);
+                                
+                                // Scroll to bottom
+                                this.scrollChatToBottom();
+                                
+                            } else if (data.type === 'tool_call') {
+                                // Show tool usage indicator
+                                const toolIndicator = document.createElement('div');
+                                toolIndicator.className = 'tool-indicator';
+                                toolIndicator.innerHTML = `<i class="fas fa-cog fa-spin"></i> ${data.content}`;
+                                assistantMessageDiv.appendChild(toolIndicator);
+                                
+                            } else if (data.type === 'error') {
+                                // Handle error
+                                currentContent = `Error: ${data.content}`;
+                                assistantMessageDiv.innerHTML = this.formatMessageContent(currentContent);
+                                assistantMessageDiv.classList.add('error-message');
+                                
+                            } else if (data.type === 'done' || data.type === 'close') {
+                                // Remove any remaining indicators
+                                if (typingIndicator && typingIndicator.parentNode) {
+                                    typingIndicator.remove();
+                                }
+                                const toolIndicators = assistantMessageDiv.querySelectorAll('.tool-indicator');
+                                toolIndicators.forEach(indicator => indicator.remove());
+                                
+                                // Mark message as complete (removes blinking cursor)
+                                assistantMessageDiv.classList.add('complete');
+                                break;
+                            }
+                            
+                        } catch (parseError) {
+                            console.warn('Failed to parse SSE data:', line);
+                        }
+                    }
+                }
+            }
+            
+        } catch (error) {
+            // Remove typing indicator
+            if (typingIndicator && typingIndicator.parentNode) {
+                typingIndicator.remove();
+            }
+            
+            // Show error in message
+            assistantMessageDiv.innerHTML = this.formatMessageContent(`Error: ${error.message}`);
+            assistantMessageDiv.classList.add('error-message');
+            assistantMessageDiv.classList.add('complete');
+            throw error;
+        }
+    }
+
+    formatMessageContent(content) {
+        // Convert line breaks to HTML and preserve formatting
+        return content.replace(/\n/g, '<br>');
+    }
+
+    scrollChatToBottom() {
+        const chatMessages = document.getElementById('chatMessages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async resetChat() {
+        try {
+            await fetch('/ai/reset', { method: 'POST' });
+            
+            // Clear chat messages
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML = '';
+            
+            // Add welcome message back
+            this.addWelcomeMessage();
+            
+        } catch (error) {
+            console.error('Reset chat error:', error);
+            this.addChatMessage('system', 'Error resetting conversation. Please refresh the page.');
+        }
+    }
+
+    addChatMessage(role, content) {
+        const chatMessages = document.getElementById('chatMessages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${role}`;
+        
+        // Format the content (convert line breaks to HTML)
+        const formattedContent = content.replace(/\n/g, '<br>');
+        messageDiv.innerHTML = formattedContent;
+        
+        chatMessages.appendChild(messageDiv);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        return messageDiv;
+    }
+
+    addChatLoading() {
+        const chatMessages = document.getElementById('chatMessages');
+        const loadingDiv = document.createElement('div');
+        const loadingId = 'loading-' + Date.now();
+        
+        loadingDiv.id = loadingId;
+        loadingDiv.className = 'chat-loading';
+        loadingDiv.innerHTML = `
+            AI is thinking...
+            <div class="dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        `;
+        
+        chatMessages.appendChild(loadingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        return loadingId;
+    }
+
+    removeChatLoading(loadingId) {
+        const loadingDiv = document.getElementById(loadingId);
+        if (loadingDiv) {
+            loadingDiv.remove();
+        }
+    }
+
+    setChatInputState(enabled) {
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendChatBtn');
+        
+        chatInput.disabled = !enabled;
+        sendBtn.disabled = !enabled;
+        
+        if (enabled) {
+            chatInput.focus();
+        }
     }
 }
 

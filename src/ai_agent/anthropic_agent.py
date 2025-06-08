@@ -115,6 +115,122 @@ class ValorantAgent:
             logger.error(f"Error in chat: {e}")
             return f"I apologize, but I encountered an error while processing your request: {str(e)}"
     
+    async def chat_stream(self, message: str, player_context: Optional[str] = None):
+        """
+        Chat with the AI agent about Valorant performance with streaming response.
+        
+        Args:
+            message: User's message
+            player_context: Current player being analyzed (riot_id)
+            
+        Yields:
+            Streaming response chunks
+        """
+        try:
+            # Build system prompt
+            system_prompt = self._build_system_prompt()
+            
+            # Add player context if provided
+            if player_context:
+                system_prompt += f"\n\nCurrent player context: {player_context}"
+            
+            # Prepare messages
+            messages = [
+                {"role": "user", "content": message}
+            ]
+            
+            # Add conversation history
+            if self.conversation_history:
+                messages = self.conversation_history + messages
+            
+            # Make streaming request to Claude
+            response_text = ""
+            
+            # Use regular message creation for now (streaming has async context issues)
+            response = await self.anthropic.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=2048,
+                temperature=0.7,
+                system=system_prompt,
+                messages=messages,
+                tools=self._get_mcp_tools()
+            )
+            
+            # Simulate streaming by yielding chunks of the response
+            response_text = ""
+            
+            # Handle tool calls first
+            for content in response.content:
+                if content.type == "tool_use":
+                    yield {"type": "tool_call", "content": f"Using tool: {content.name}"}
+                    
+                    tool_result = await self._execute_mcp_tool(
+                        content.name, 
+                        content.input
+                    )
+                    
+                    # Get follow-up response with tool result
+                    follow_up_messages = messages + [
+                        {"role": "assistant", "content": response.content},
+                        {"role": "user", "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": content.id,
+                                "content": tool_result
+                            }
+                        ]}
+                    ]
+                    
+                    follow_up_response = await self.anthropic.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=2048,
+                        temperature=0.7,
+                        system=system_prompt,
+                        messages=follow_up_messages
+                    )
+                    
+                    # Stream the follow-up text response
+                    for follow_content in follow_up_response.content:
+                        if follow_content.type == "text":
+                            text = follow_content.text
+                            response_text += text
+                            
+                            # Yield in chunks for streaming effect
+                            words = text.split(' ')
+                            for i, word in enumerate(words):
+                                if i > 0:
+                                    yield {"type": "text", "content": " "}
+                                yield {"type": "text", "content": word}
+                                # Add small delay for streaming effect (optional)
+                                await asyncio.sleep(0.03)
+                    
+                elif content.type == "text":
+                    text = content.text
+                    response_text += text
+                    
+                    # Yield in chunks for streaming effect
+                    words = text.split(' ')
+                    for i, word in enumerate(words):
+                        if i > 0:
+                            yield {"type": "text", "content": " "}
+                        yield {"type": "text", "content": word}
+                        # Add small delay for streaming effect
+                        await asyncio.sleep(0.03)
+            
+            # Update conversation history
+            self.conversation_history.append({"role": "user", "content": message})
+            self.conversation_history.append({"role": "assistant", "content": response_text})
+            
+            # Keep conversation history manageable
+            if len(self.conversation_history) > 10:
+                self.conversation_history = self.conversation_history[-8:]
+                
+            yield {"type": "done"}
+            
+        except Exception as e:
+            logger.error(f"Error in chat stream: {e}")
+            yield {"type": "error", "content": f"I apologize, but I encountered an error while processing your request: {str(e)}"}
+    
     def _build_system_prompt(self) -> str:
         """Build the system prompt for the AI agent."""
         return """
