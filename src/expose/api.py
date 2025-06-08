@@ -3,7 +3,7 @@ FastAPI application for exposing tracker.gg Valorant data.
 Provides REST endpoints for accessing ingested player statistics.
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Path, Request
+from fastapi import FastAPI, HTTPException, Depends, Query, Path, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
