@@ -1,0 +1,62 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tracker-api
+    environment:
+      - ENVIRONMENT=production
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL}
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      - flaresolverr
+      - postgres
+      - redis
+    networks:
+      - internal
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: tracker-api-flaresolverr
+    ports:
+      - "${PORT:-8191}:8191"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=Europe/Dublin
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:latest
+    container_name: tracker-api-postgres
+    environment:
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=${PG_DB}
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    container_name: tracker-api-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    external: false
+
+volumes:
+  postgres_data: {}
