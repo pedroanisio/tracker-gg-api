@@ -624,82 +624,82 @@ async def main():
     
     actual_time = (time.time() - start_time) / 60
     
-                if summary:
-                # Determine display title based on mode
-                if mode == "init":
-                    title = "🎉 INITIALIZATION COMPLETE!"
-                elif mode == "update":
-                    title = "⚡ UPDATE COMPLETE!"
-                else:
-                    title = "🎉 FULL DISCOVERY COMPLETE!"
-                
-                print(f"\n{title}")
-                print("=" * 60)
-                print(f"📊 Total endpoints: {summary['total_endpoints']}")
-                print(f"✅ Successful: {summary['successful_endpoints']}")
-                print(f"❌ Failed: {summary['failed_endpoints']}")
-                print(f"📈 Success rate: {summary['success_rate']}")
-                print(f"⏱️  Actual time: {actual_time:.1f} minutes")
-                
-                # Show files created (if any)
-                if 'results' in summary:
-                    successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
-                    if successful_files:
-                        print(f"\n📁 Data files created:")
-                        for filename in successful_files[:10]:  # Show first 10
-                            print(f"  📄 {filename}")
-                        
-                        if len(successful_files) > 10:
-                            print(f"  ... and {len(successful_files) - 10} more files")
-                    
-                    # Show breakdown by API version
-                    v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
-                    v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
-                    rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
-                    
-                    if v1_success > 0 or v2_success > 0:
-                        print(f"\n📊 API Breakdown:")
-                        print(f"  🔹 API v1 successful: {v1_success}")
-                        print(f"  🔹 API v2 successful: {v2_success}")
-                        if rate_limited > 0:
-                            print(f"  🚫 Rate limited: {rate_limited}")
-                
-                # Show database loading results
-                db_loading = summary.get("database_loading", {})
-                db_status = db_loading.get("status", "unknown")
-                
-                print(f"\n🗄️  Database Loading:")
-                if db_status == "success":
-                    print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
-                    print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
-                elif db_status == "error":
-                    print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
-                elif db_status == "skipped":
-                    print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
-                elif db_status == "disabled":
-                    print(f"  ⏸️  Disabled")
-                elif db_status == "no_data":
-                    print(f"  📭 No data to load")
-                else:
-                    print(f"  ❓ Status: {db_status}")
-                
-                # Show next steps based on mode
-                if mode == "init":
-                    print(f"\n🚀 Next Steps:")
-                    print(f"  • User data is now initialized in database")
-                    print(f"  • Use --mode update for regular data refreshes")
-                    print(f"  • Web interface can now use the update button")
-                elif mode == "update":
-                    print(f"\n🚀 Update Status:")
-                    print(f"  • Recent data has been refreshed")
-                    print(f"  • Priority endpoints updated successfully")
-                    print(f"  • Ready for web interface display")
-                
-            else:
-                print(f"❌ {mode.title()} operation failed")
+    if summary:
+    # Determine display title based on mode
+    if mode == "init":
+        title = "🎉 INITIALIZATION COMPLETE!"
+    elif mode == "update":
+        title = "⚡ UPDATE COMPLETE!"
+    else:
+        title = "🎉 FULL DISCOVERY COMPLETE!"
+    
+    print(f"\n{title}")
+    print("=" * 60)
+    print(f"📊 Total endpoints: {summary['total_endpoints']}")
+    print(f"✅ Successful: {summary['successful_endpoints']}")
+    print(f"❌ Failed: {summary['failed_endpoints']}")
+    print(f"📈 Success rate: {summary['success_rate']}")
+    print(f"⏱️  Actual time: {actual_time:.1f} minutes")
+    
+    # Show files created (if any)
+    if 'results' in summary:
+        successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
+        if successful_files:
+            print(f"\n📁 Data files created:")
+            for filename in successful_files[:10]:  # Show first 10
+                print(f"  📄 {filename}")
             
-            operation_name = "initialization" if mode == "init" else "update" if mode == "update" else "discovery"
-            print(f"\n✨ {operation_name.title()} finished!")
+            if len(successful_files) > 10:
+                print(f"  ... and {len(successful_files) - 10} more files")
+        
+        # Show breakdown by API version
+        v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
+        v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
+        rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+        
+        if v1_success > 0 or v2_success > 0:
+            print(f"\n📊 API Breakdown:")
+            print(f"  🔹 API v1 successful: {v1_success}")
+            print(f"  🔹 API v2 successful: {v2_success}")
+            if rate_limited > 0:
+                print(f"  🚫 Rate limited: {rate_limited}")
+    
+    # Show database loading results
+    db_loading = summary.get("database_loading", {})
+    db_status = db_loading.get("status", "unknown")
+    
+    print(f"\n🗄️  Database Loading:")
+    if db_status == "success":
+        print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
+        print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+    elif db_status == "error":
+        print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
+    elif db_status == "skipped":
+        print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
+    elif db_status == "disabled":
+        print(f"  ⏸️  Disabled")
+    elif db_status == "no_data":
+        print(f"  📭 No data to load")
+    else:
+        print(f"  ❓ Status: {db_status}")
+    
+    # Show next steps based on mode
+    if mode == "init":
+        print(f"\n🚀 Next Steps:")
+        print(f"  • User data is now initialized in database")
+        print(f"  • Use --mode update for regular data refreshes")
+        print(f"  • Web interface can now use the update button")
+    elif mode == "update":
+        print(f"\n🚀 Update Status:")
+        print(f"  • Recent data has been refreshed")
+        print(f"  • Priority endpoints updated successfully")
+        print(f"  • Ready for web interface display")
+    
+    else:
+        print(f"❌ {mode.title()} operation failed")
+
+    operation_name = "initialization" if mode == "init" else "update" if mode == "update" else "discovery"
+    print(f"\n✨ {operation_name.title()} finished!")
 
 
 def load_existing_files_to_database(data_dir: str = "./data", pattern: str = "grammar_*.json") -> dict:
@@ -1074,6 +1074,9 @@ if __name__ == "__main__":
             print(f"🔧 Mode: {mode.upper()}")
             print(f"🗄️  Database loading: {'ENABLED' if load_to_db else 'DISABLED'}")
             
+            summary = None
+            start_time = time.time()
+            
             if mode == "init":
                 print("📊 INITIALIZATION MODE")
                 print("🔧 This will perform a FULL data load for initial setup")
@@ -1103,40 +1106,44 @@ if __name__ == "__main__":
                 print(f"❌ Unknown mode: {mode}")
                 return
             
-            start_time = time.time()
-            
             actual_time = (time.time() - start_time) / 60
             
             if summary:
-                print("\n🎉 COMPLETE GRAMMAR TEST FINISHED!")
+                print("\n🎉 TASK FINISHED!")
                 print("=" * 60)
-                print(f"📊 Total endpoints: {summary['total_endpoints']}")
-                print(f"✅ Successful: {summary['successful_endpoints']}")
-                print(f"❌ Failed: {summary['failed_endpoints']}")
-                print(f"📈 Success rate: {summary['success_rate']}")
+                print(f"📊 Total endpoints: {summary.get('total_endpoints', 'N/A')}")
+                print(f"✅ Successful: {summary.get('successful_endpoints', 'N/A')}")
+                print(f"❌ Failed: {summary.get('failed_endpoints', 'N/A')}")
+                if 'success_rate' in summary:
+                    print(f"📈 Success rate: {summary['success_rate']}")
                 print(f"⏱️  Actual time: {actual_time:.1f} minutes")
-                print(f"🎯 Efficiency: {(estimated_time/actual_time*100):.0f}% of estimate" if actual_time > 0 else "")
                 
-                print(f"\n📁 Data files created:")
-                successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
-                for filename in successful_files[:10]:  # Show first 10
-                    print(f"  📄 {filename}")
-                
-                if len(successful_files) > 10:
-                    print(f"  ... and {len(successful_files) - 10} more files")
-                
-                print(f"\n📋 Complete summary: complete_grammar_test_{username.replace('#', '_')}.json")
-                
-                # Show breakdown by API version
-                v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
-                v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
-                rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
-                
-                print(f"\n📊 Breakdown:")
-                print(f"  🔹 API v1 successful: {v1_success}")
-                print(f"  🔹 API v2 successful: {v2_success}")
-                if rate_limited > 0:
-                    print(f"  🚫 Rate limited: {rate_limited}")
+                if 'results' in summary:
+                    print(f"\n📁 Data files created:")
+                    successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
+                    for filename in successful_files[:10]:  # Show first 10
+                        print(f"  📄 {filename}")
+                    
+                    if len(successful_files) > 10:
+                        print(f"  ... and {len(successful_files) - 10} more files")
+                    
+                    if mode in ['init', 'full'] and 'username' in summary:
+                        summary_username = summary['username'].replace('#', '_')
+                        if mode == 'init' or mode == 'full':
+                             print(f"\n📋 Complete summary: complete_grammar_test_{summary_username}.json")
+                        elif mode == 'update':
+                             print(f"\n📋 Update summary saved: recent_update_{summary_username}_{int(summary.get('timestamp', time.time()))}.json")
+
+                    # Show breakdown by API version
+                    v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
+                    v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
+                    rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+                    
+                    print(f"\n📊 Breakdown:")
+                    print(f"  🔹 API v1 successful: {v1_success}")
+                    print(f"  🔹 API v2 successful: {v2_success}")
+                    if rate_limited > 0:
+                        print(f"  🚫 Rate limited: {rate_limited}")
                 
                 # Show database loading results
                 db_loading = summary.get("database_loading", {})
@@ -1145,7 +1152,8 @@ if __name__ == "__main__":
                 print(f"\n🗄️  Database Loading:")
                 if db_status == "success":
                     print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
-                    print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+                    if 'combined_filename' in db_loading and db_loading['combined_filename']:
+                        print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
                 elif db_status == "error":
                     print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
                 elif db_status == "skipped":
@@ -1158,8 +1166,8 @@ if __name__ == "__main__":
                     print(f"  ❓ Status: {db_status}")
                 
             else:
-                print("❌ Grammar test failed")
+                print(f"❌ {mode.upper()} mode failed to produce a summary.")
             
-            print("\n✨ Complete API discovery finished!")
+            print(f"\n✨ {mode.upper()} mode finished!")
         
         asyncio.run(main_with_args()) 
