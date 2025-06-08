@@ -624,60 +624,82 @@ async def main():
     
     actual_time = (time.time() - start_time) / 60
     
-    if summary:
-        print("\n🎉 COMPLETE GRAMMAR TEST FINISHED!")
-        print("=" * 60)
-        print(f"📊 Total endpoints: {summary['total_endpoints']}")
-        print(f"✅ Successful: {summary['successful_endpoints']}")
-        print(f"❌ Failed: {summary['failed_endpoints']}")
-        print(f"📈 Success rate: {summary['success_rate']}")
-        print(f"⏱️  Actual time: {actual_time:.1f} minutes")
-        print(f"🎯 Efficiency: {(estimated_time/actual_time*100):.0f}% of estimate" if actual_time > 0 else "")
-        
-        print(f"\n📁 Data files created:")
-        successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
-        for filename in successful_files[:10]:  # Show first 10
-            print(f"  📄 {filename}")
-        
-        if len(successful_files) > 10:
-            print(f"  ... and {len(successful_files) - 10} more files")
-        
-        print(f"\n📋 Complete summary: complete_grammar_test_{username.replace('#', '_')}.json")
-        
-        # Show breakdown by API version
-        v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
-        v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
-        rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
-        
-        print(f"\n📊 Breakdown:")
-        print(f"  🔹 API v1 successful: {v1_success}")
-        print(f"  🔹 API v2 successful: {v2_success}")
-        if rate_limited > 0:
-            print(f"  🚫 Rate limited: {rate_limited}")
-        
-        # Show database loading results
-        db_loading = summary.get("database_loading", {})
-        db_status = db_loading.get("status", "unknown")
-        
-        print(f"\n🗄️  Database Loading:")
-        if db_status == "success":
-            print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
-            print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
-        elif db_status == "error":
-            print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
-        elif db_status == "skipped":
-            print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
-        elif db_status == "disabled":
-            print(f"  ⏸️  Disabled")
-        elif db_status == "no_data":
-            print(f"  📭 No data to load")
-        else:
-            print(f"  ❓ Status: {db_status}")
-        
-    else:
-        print("❌ Grammar test failed")
-    
-    print("\n✨ Complete API discovery finished!")
+                if summary:
+                # Determine display title based on mode
+                if mode == "init":
+                    title = "🎉 INITIALIZATION COMPLETE!"
+                elif mode == "update":
+                    title = "⚡ UPDATE COMPLETE!"
+                else:
+                    title = "🎉 FULL DISCOVERY COMPLETE!"
+                
+                print(f"\n{title}")
+                print("=" * 60)
+                print(f"📊 Total endpoints: {summary['total_endpoints']}")
+                print(f"✅ Successful: {summary['successful_endpoints']}")
+                print(f"❌ Failed: {summary['failed_endpoints']}")
+                print(f"📈 Success rate: {summary['success_rate']}")
+                print(f"⏱️  Actual time: {actual_time:.1f} minutes")
+                
+                # Show files created (if any)
+                if 'results' in summary:
+                    successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
+                    if successful_files:
+                        print(f"\n📁 Data files created:")
+                        for filename in successful_files[:10]:  # Show first 10
+                            print(f"  📄 {filename}")
+                        
+                        if len(successful_files) > 10:
+                            print(f"  ... and {len(successful_files) - 10} more files")
+                    
+                    # Show breakdown by API version
+                    v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
+                    v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
+                    rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+                    
+                    if v1_success > 0 or v2_success > 0:
+                        print(f"\n📊 API Breakdown:")
+                        print(f"  🔹 API v1 successful: {v1_success}")
+                        print(f"  🔹 API v2 successful: {v2_success}")
+                        if rate_limited > 0:
+                            print(f"  🚫 Rate limited: {rate_limited}")
+                
+                # Show database loading results
+                db_loading = summary.get("database_loading", {})
+                db_status = db_loading.get("status", "unknown")
+                
+                print(f"\n🗄️  Database Loading:")
+                if db_status == "success":
+                    print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
+                    print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+                elif db_status == "error":
+                    print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
+                elif db_status == "skipped":
+                    print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
+                elif db_status == "disabled":
+                    print(f"  ⏸️  Disabled")
+                elif db_status == "no_data":
+                    print(f"  📭 No data to load")
+                else:
+                    print(f"  ❓ Status: {db_status}")
+                
+                # Show next steps based on mode
+                if mode == "init":
+                    print(f"\n🚀 Next Steps:")
+                    print(f"  • User data is now initialized in database")
+                    print(f"  • Use --mode update for regular data refreshes")
+                    print(f"  • Web interface can now use the update button")
+                elif mode == "update":
+                    print(f"\n🚀 Update Status:")
+                    print(f"  • Recent data has been refreshed")
+                    print(f"  • Priority endpoints updated successfully")
+                    print(f"  • Ready for web interface display")
+                
+            else:
+                print(f"❌ {mode.title()} operation failed")
+            
+            operation_name = "initialization" if mode == "init" else "update" if mode == "update" else "discovery"
+            print(f"\n✨ {operation_name.title()} finished!")
 
 
 def load_existing_files_to_database(data_dir: str = "./data", pattern: str = "grammar_*.json") -> dict:
@@ -1036,38 +1058,52 @@ if __name__ == "__main__":
         else:
             print(f"❌ Failed: {result['error']}")
     else:
-        # Run the normal grammar test
+        # Run based on mode
         async def main_with_args():
             username = args.username
             load_to_db = not args.no_database
+            mode = args.mode
             
-            print("🧬 Testing Complete Tracker.gg API Grammar")
-            if load_to_db:
-                print("🗄️  Database loading: ENABLED")
+            # Map priority levels
+            priority_map = {"high": PRIORITY_HIGH, "medium": PRIORITY_MEDIUM, "low": PRIORITY_LOW}
+            priority_threshold = priority_map.get(args.priority, PRIORITY_HIGH)
+            
+            print("🚀 Tracker.gg API Data Loader")
+            print("=" * 50)
+            print(f"👤 Target: {username}")
+            print(f"🔧 Mode: {mode.upper()}")
+            print(f"🗄️  Database loading: {'ENABLED' if load_to_db else 'DISABLED'}")
+            
+            if mode == "init":
+                print("📊 INITIALIZATION MODE")
+                print("🔧 This will perform a FULL data load for initial setup")
+                print("⏱️  Expected time: 15-30 minutes")
+                print("💡 Use this for new users or comprehensive data collection\n")
+                
+                summary = await load_full_api_data(username, load_to_db)
+                
+            elif mode == "update":
+                print("⚡ UPDATE MODE")
+                print(f"🎯 Priority level: {args.priority.upper()} (≥{priority_threshold})")
+                print("🔧 This will fetch only recent/priority data")
+                print("⏱️  Expected time: 2-5 minutes") 
+                print("💡 Use this for regular updates via web interface\n")
+                
+                summary = await update_recent_data(username, priority_threshold, load_to_db)
+                
+            elif mode == "full":
+                print("🔍 FULL DISCOVERY MODE")
+                print("🔧 This will test ALL possible endpoint combinations")
+                print("⏱️  Expected time: 15-30 minutes")
+                print("💡 Use this for complete API discovery and research\n")
+                
+                summary = await load_full_api_data(username, load_to_db)
+            
             else:
-                print("🗄️  Database loading: DISABLED")
-            print("This will systematically test ALL possible endpoint combinations")
-            print("from the provided grammar rules.\n")
-            
-            # Calculate estimated time
-            endpoints = await generate_all_api_endpoints(username)
-            avg_delay = (TIMING_CONFIG['min_request_delay'] + TIMING_CONFIG['max_request_delay']) / 2
-            batches = (len(endpoints) + TIMING_CONFIG['batch_size'] - 1) // TIMING_CONFIG['batch_size']
-            estimated_time = (
-                len(endpoints) * avg_delay +  # Request delays
-                (batches - 1) * TIMING_CONFIG['batch_delay'] +  # Inter-batch delays
-                TIMING_CONFIG['authentication_wait'] +  # Initial auth wait
-                30  # Session setup and cleanup buffer
-            ) / 60  # Convert to minutes
-            
-            print(f"⏱️  Estimated completion time: {estimated_time:.1f} minutes")
-            print(f"📊 {len(endpoints)} endpoints in {batches} batches")
-            print("💡 Tip: This will respect rate limits and use human-like timing\n")
+                print(f"❌ Unknown mode: {mode}")
+                return
             
             start_time = time.time()
-            
-            # Run the complete grammar test
-            summary = await test_complete_api_grammar(username, load_to_database=load_to_db)
             
             actual_time = (time.time() - start_time) / 60
             
