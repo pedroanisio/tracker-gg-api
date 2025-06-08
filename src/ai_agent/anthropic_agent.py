@@ -6,6 +6,7 @@ Uses MCP tools to provide intelligent analysis of player performance.
 import os
 import json
 import logging
+import asyncio
 from typing import Dict, List, Any, Optional
 from anthropic import Anthropic
 from pydantic import BaseModel
@@ -160,7 +161,7 @@ class ValorantAgent:
             response_text = ""
             
             # Use regular message creation for now (streaming has async context issues)
-            response = await self.anthropic.messages.create(
+            response = self.anthropic.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=2048,
                 temperature=0.7,
@@ -194,7 +195,7 @@ class ValorantAgent:
                         ]}
                     ]
                     
-                    follow_up_response = await self.anthropic.messages.create(
+                    follow_up_response = self.anthropic.messages.create(
                         model="claude-3-5-sonnet-20241022",
                         max_tokens=2048,
                         temperature=0.7,

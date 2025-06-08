@@ -26,20 +26,34 @@ An intelligent AI agent powered by Anthropic's Claude that provides personalized
 
 ### 1. **Install Dependencies**
 ```bash
-pip install anthropic==0.28.0 mcp==1.0.0 websockets==12.0
+pip install anthropic>=0.50.0 mcp>=1.0.0 websockets>=12.0 python-dotenv>=1.0.0
 ```
 
 ### 2. **Set Environment Variables**
+Create a `.env` file in the project root directory:
 ```bash
-# Add to your .env file or environment
-export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+# .env file
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Optional - Database configuration (if different from defaults)
+# DATABASE_URL=postgresql://user:password@localhost:5432/valorant_tracker
+
+# Optional - FlareSolverr configuration
+# FLARESOLVERR_URL=http://localhost:8191
+
+# Optional - AI Configuration
+# CLAUDE_MODEL=claude-3-5-sonnet-20241022
+# MAX_TOKENS=2048
+# TEMPERATURE=0.7
 ```
+
+**Important**: Never commit the `.env` file to version control! Add it to `.gitignore`.
 
 ### 3. **Get Anthropic API Key**
 1. Visit [Anthropic Console](https://console.anthropic.com/)
 2. Create an account or sign in
 3. Generate an API key
-4. Add it to your environment variables
+4. Copy the key and paste it in your `.env` file (replace `your_anthropic_api_key_here`)
 
 ### 4. **Start the Application**
 ```bash
@@ -225,10 +239,19 @@ GET /ai/history
 
 ### **Common Issues**
 
-#### **"AI agent error: Authentication failed"**
-- Check your `ANTHROPIC_API_KEY` environment variable
-- Verify the API key is valid and has sufficient credits
-- Ensure the key is properly set before starting the server
+#### **"AI agent error: Authentication failed"** or **"Could not resolve authentication method"**
+- **Check .env file**: Ensure you have created a `.env` file in the project root
+- **Verify API key**: Check that `ANTHROPIC_API_KEY` is set in your `.env` file
+- **Key format**: Ensure there are no extra spaces or quotes around the API key
+- **File location**: The `.env` file must be in the project root directory
+- **Restart server**: Restart the FastAPI server after modifying the `.env` file
+- **API key validity**: Verify the API key is valid and has sufficient credits
+- **Environment loading**: Check that `python-dotenv` is installed
+
+**Example .env file:**
+```
+ANTHROPIC_API_KEY=sk-ant-api03-abcd1234...
+```
 
 #### **"Error executing tool: Player not found"**
 - Verify the player exists in your database

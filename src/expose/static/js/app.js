@@ -816,10 +816,20 @@ Please try again in a few minutes.`);
     }
 
     sendContextualMessage(message) {
-        // Set the message in the input and send it
-        const chatInput = document.getElementById('chatInput');
-        chatInput.value = message;
-        this.sendChatMessage();
+        console.log('sendContextualMessage called with:', message);
+        try {
+            // Set the message in the input and send it
+            const chatInput = document.getElementById('chatInput');
+            if (!chatInput) {
+                console.error('Chat input element not found');
+                return;
+            }
+            
+            chatInput.value = message;
+            this.sendChatMessage();
+        } catch (error) {
+            console.error('Error in sendContextualMessage:', error);
+        }
     }
 
     // Override the search method to handle UI cleanup
@@ -893,6 +903,7 @@ Please try again in a few minutes.`);
 }
 
 // Initialize the app when the DOM is loaded
+let app;
 document.addEventListener('DOMContentLoaded', () => {
-    new ValorantStatsApp();
+    app = new ValorantStatsApp();
 }); 
