@@ -82,7 +82,7 @@ class StatValue(BaseModel):
 class Metadata(BaseModel):
     """Metadata for segments and data objects."""
     name: str = Field(..., description="Display name")
-    schema: str = Field(..., description="Schema version (e.g., 'statsv2')")
+    schema_version: str = Field(..., description="Schema version (e.g., 'statsv2')", alias="schema")
 
 
 class Attributes(BaseModel):

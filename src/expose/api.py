@@ -3,13 +3,17 @@ FastAPI application for exposing tracker.gg Valorant data.
 Provides REST endpoints for accessing ingested player statistics.
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Path
+from fastapi import FastAPI, HTTPException, Depends, Query, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 from typing import Optional, List, Dict, Any
+from pydantic import BaseModel
 import logging
 from datetime import datetime
+import os
 
 # Import from shared modules
 from ..shared.database import (
@@ -34,6 +38,13 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Get the directory of this file
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Setup templates and static files
+templates = Jinja2Templates(directory=os.path.join(current_dir, "templates"))
+app.mount("/static", StaticFiles(directory=os.path.join(current_dir, "static")), name="static")
 
 # Add CORS middleware
 app.add_middleware(
@@ -98,12 +109,14 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "redoc": "/redoc",
+        "dashboard": "/dashboard",
         "endpoints": {
             "health": "/health",
             "players": "/players",
             "premier": "/players/{riot_id}/premier",
             "stats": "/players/{riot_id}/stats",
-            "playlists": "/players/{riot_id}/playlists"
+            "playlists": "/players/{riot_id}/playlists",
+            "dashboard": "/dashboard"
         }
     }
 
@@ -129,6 +142,15 @@ async def health_check(session: Session = Depends(get_session)):
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
+
+# ===============================
+# WEB INTERFACE ENDPOINTS
+# ===============================
+
+@app.get("/dashboard", response_class=HTMLResponse, tags=["Web Interface"])
+async def dashboard(request: Request):
+    """Serve the web dashboard for viewing player stats."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 # ===============================
 # PLAYER ENDPOINTS
@@ -523,6 +545,78 @@ async def get_database_stats(session: Session = Depends(get_session)):
         },
         "generated_at": datetime.utcnow().isoformat()
     }
+
+# ===============================
+# AI AGENT ENDPOINTS
+# ===============================
+
+class ChatRequest(BaseModel):
+    """Request model for chat with AI agent."""
+    message: str
+    player_context: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    """Response model for chat with AI agent."""
+    response: str
+    conversation_id: Optional[str] = None
+
+@app.post("/ai/chat", tags=["AI Agent"])
+async def chat_with_agent(chat_request: ChatRequest):
+    """Chat with the AI agent about player performance."""
+    try:
+        # Import the agent
+        from ..ai_agent.anthropic_agent import get_agent
+        
+        agent = get_agent()
+        response = await agent.chat(
+            message=chat_request.message,
+            player_context=chat_request.player_context
+        )
+        
+        return ChatResponse(response=response)
+        
+    except Exception as e:
+        logger.error(f"Error in AI chat: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI agent error: {str(e)}"
+        )
+
+@app.post("/ai/reset", tags=["AI Agent"])
+async def reset_conversation():
+    """Reset the AI agent conversation."""
+    try:
+        from ..ai_agent.anthropic_agent import get_agent
+        
+        agent = get_agent()
+        agent.reset_conversation()
+        
+        return {"message": "Conversation reset successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error resetting conversation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error resetting conversation: {str(e)}"
+        )
+
+@app.get("/ai/history", tags=["AI Agent"])
+async def get_conversation_history():
+    """Get the conversation history with the AI agent."""
+    try:
+        from ..ai_agent.anthropic_agent import get_agent
+        
+        agent = get_agent()
+        history = agent.get_conversation_history()
+        
+        return {"history": history}
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting conversation history: {str(e)}"
+        )
 
 # ===============================
 # ERROR HANDLERS

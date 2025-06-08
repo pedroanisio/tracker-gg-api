@@ -1,0 +1,252 @@
+"""
+Anthropic AI Agent for Valorant Player Insights.
+Uses MCP tools to provide intelligent analysis of player performance.
+"""
+
+import os
+import json
+import logging
+from typing import Dict, List, Any, Optional
+from anthropic import Anthropic
+from pydantic import BaseModel
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class ChatMessage(BaseModel):
+    """Chat message model."""
+    role: str
+    content: str
+
+class ValorantAgent:
+    """AI agent for providing Valorant player insights."""
+    
+    def __init__(self):
+        self.anthropic = Anthropic(
+            api_key=os.getenv("ANTHROPIC_API_KEY")
+        )
+        self.conversation_history = []
+        
+    async def chat(self, message: str, player_context: Optional[str] = None) -> str:
+        """
+        Chat with the AI agent about Valorant performance.
+        
+        Args:
+            message: User's message
+            player_context: Current player being analyzed (riot_id)
+            
+        Returns:
+            AI agent's response
+        """
+        try:
+            # Build system prompt
+            system_prompt = self._build_system_prompt()
+            
+            # Add player context if provided
+            if player_context:
+                system_prompt += f"\n\nCurrent player context: {player_context}"
+            
+            # Prepare messages
+            messages = [
+                {"role": "user", "content": message}
+            ]
+            
+            # Add conversation history
+            if self.conversation_history:
+                messages = self.conversation_history + messages
+            
+            # Make request to Claude
+            response = self.anthropic.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=2048,
+                temperature=0.7,
+                system=system_prompt,
+                messages=messages,
+                tools=self._get_mcp_tools()
+            )
+            
+            # Process response and tool calls
+            response_text = ""
+            
+            for content in response.content:
+                if content.type == "text":
+                    response_text += content.text
+                elif content.type == "tool_use":
+                    # Execute MCP tool
+                    tool_result = await self._execute_mcp_tool(
+                        content.name, 
+                        content.input
+                    )
+                    
+                    # Add tool result to context and get follow-up response
+                    follow_up_messages = messages + [
+                        {"role": "assistant", "content": response.content},
+                        {"role": "user", "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": content.id,
+                                "content": tool_result
+                            }
+                        ]}
+                    ]
+                    
+                    follow_up = self.anthropic.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=2048,
+                        temperature=0.7,
+                        system=system_prompt,
+                        messages=follow_up_messages
+                    )
+                    
+                    response_text += follow_up.content[0].text if follow_up.content else ""
+            
+            # Update conversation history
+            self.conversation_history.append({"role": "user", "content": message})
+            self.conversation_history.append({"role": "assistant", "content": response_text})
+            
+            # Keep conversation history manageable
+            if len(self.conversation_history) > 10:
+                self.conversation_history = self.conversation_history[-8:]
+            
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"Error in chat: {e}")
+            return f"I apologize, but I encountered an error while processing your request: {str(e)}"
+    
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt for the AI agent."""
+        return """
+You are a professional Valorant performance analyst and coach. You have access to detailed player statistics and performance data through specialized tools. Your role is to:
+
+1. **Analyze Player Performance**: Use the available tools to gather comprehensive data about players, including their statistics across different game modes, performance trends, and weapon proficiency.
+
+2. **Provide Strategic Insights**: Offer actionable advice based on the data, including:
+   - Strengths and weaknesses analysis
+   - Performance trends and patterns
+   - Specific areas for improvement
+   - Strategic recommendations for different game modes
+
+3. **Be Data-Driven**: Always base your analysis on actual statistics rather than assumptions. Use the MCP tools to gather current and historical data before making recommendations.
+
+4. **Communicate Clearly**: Explain complex statistics in an understandable way. Use comparisons, percentages, and clear metrics to illustrate points.
+
+5. **Stay Focused on Valorant**: Your expertise is specifically in Valorant gameplay, strategies, and performance optimization.
+
+Available tools allow you to:
+- Search for players and get their basic information
+- Analyze comprehensive player statistics and performance data
+- Examine performance trends over time
+- Compare different time periods
+- Analyze weapon/loadout performance
+
+When a user asks about a player, always start by gathering their data using the available tools. Be proactive in using multiple tools to build a complete picture before providing analysis.
+
+Remember to be encouraging and constructive in your feedback, focusing on growth and improvement opportunities.
+"""
+
+    def _get_mcp_tools(self) -> List[Dict[str, Any]]:
+        """Get MCP tools definition for Claude."""
+        return [
+            {
+                "name": "search_player",
+                "description": "Search for a player by riot ID or username",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "riot_id": {
+                            "type": "string",
+                            "description": "Full Riot ID (username#tag) or just username to search"
+                        }
+                    },
+                    "required": ["riot_id"]
+                }
+            },
+            {
+                "name": "get_player_overview",
+                "description": "Get comprehensive overview of player statistics",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "riot_id": {
+                            "type": "string",
+                            "description": "Player's Riot ID (username#tag)"
+                        }
+                    },
+                    "required": ["riot_id"]
+                }
+            },
+            {
+                "name": "analyze_performance_trends",
+                "description": "Analyze player's performance trends over time",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "riot_id": {
+                            "type": "string",
+                            "description": "Player's Riot ID (username#tag)"
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days to analyze (default: 30)",
+                            "default": 30
+                        }
+                    },
+                    "required": ["riot_id"]
+                }
+            }
+        ]
+
+    async def _execute_mcp_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
+        """
+        Execute an MCP tool and return the result.
+        This is a simplified version - in a full implementation, 
+        this would connect to the actual MCP server.
+        """
+        try:
+            # Import the MCP server functions
+            from .mcp_server import ValorantMCPServer
+            
+            server = ValorantMCPServer()
+            
+            if tool_name == "search_player":
+                result = await server.search_player(tool_input["riot_id"])
+            elif tool_name == "get_player_overview":
+                result = await server.get_player_overview(tool_input["riot_id"])
+            elif tool_name == "analyze_performance_trends":
+                result = await server.analyze_performance_trends(
+                    tool_input["riot_id"],
+                    tool_input.get("days", 30)
+                )
+            else:
+                return f"Unknown tool: {tool_name}"
+            
+            # Extract text content from result
+            if result.content and len(result.content) > 0:
+                return result.content[0].text
+            else:
+                return "No data returned from tool"
+                
+        except Exception as e:
+            logger.error(f"Error executing MCP tool {tool_name}: {e}")
+            return f"Error executing tool: {str(e)}"
+
+    def reset_conversation(self):
+        """Reset the conversation history."""
+        self.conversation_history = []
+
+    def get_conversation_history(self) -> List[ChatMessage]:
+        """Get the conversation history."""
+        return [ChatMessage(role=msg["role"], content=msg["content"]) 
+                for msg in self.conversation_history]
+
+# Global agent instance
+_agent_instance = None
+
+def get_agent() -> ValorantAgent:
+    """Get the global agent instance."""
+    global _agent_instance
+    if _agent_instance is None:
+        _agent_instance = ValorantAgent()
+    return _agent_instance 

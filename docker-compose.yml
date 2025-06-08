@@ -41,7 +41,7 @@ services:
       - ./data:/app/data  # Mount data directory for JSON files
     profiles:
       - ingestion  # Only start with --profile ingestion
-    command: ["python", "-m", "src", "ingest", "--init-db"]  # Can be overridden
+    command: ["init-db"]  # Can be overridden with other ingestion commands
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest

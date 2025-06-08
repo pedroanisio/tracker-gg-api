@@ -92,7 +92,7 @@ class StatisticValue(SQLModel, table=True):
     
     # Optional fields
     description: Optional[str] = Field(None, description="Additional description")
-    metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    stat_metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), alias="metadata")
     
     __table_args__ = (
         Index('idx_stat_segment_name', 'segment_id', 'stat_name'),
@@ -217,7 +217,7 @@ class DataIngestionLog(SQLModel, table=True):
     
     # Details
     details: Optional[str] = Field(None, description="Additional details or error message")
-    metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    log_metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), alias="metadata")
     
     # Timestamps
     started_at: datetime = Field(default_factory=datetime.utcnow, description="When operation started")
@@ -293,7 +293,7 @@ def create_segment_with_stats(
                 display_value=stat_data.get('displayValue', str(stat_data['value'])),
                 display_type=stat_data.get('displayType', 'Number'),
                 description=stat_data.get('description'),
-                metadata=stat_data.get('metadata', {})
+                stat_metadata=stat_data.get('metadata', {})
             )
             session.add(stat_value)
     
@@ -380,7 +380,7 @@ def log_ingestion_operation(
         records_inserted=records_inserted,
         records_updated=records_updated,
         details=details,
-        metadata=metadata or {},
+        log_metadata=metadata or {},
         started_at=started_at,
         completed_at=now,
         duration_seconds=duration
