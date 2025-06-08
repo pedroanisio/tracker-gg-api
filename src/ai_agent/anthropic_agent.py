@@ -116,9 +116,19 @@ class ValorantAgent:
                     
                     response_text += follow_up.content[0].text if follow_up.content else ""
             
-            # Update conversation history
-            self.conversation_history.append({"role": "user", "content": message})
-            self.conversation_history.append({"role": "assistant", "content": response_text})
+            # Update conversation history (avoid tool call complexity)
+            if has_tool_calls:
+                # For tool calls, reset conversation history to avoid Claude API issues
+                self.conversation_history = []
+                if response_text.strip():
+                    # Start fresh conversation with this exchange
+                    self.conversation_history.append({"role": "user", "content": message})
+                    self.conversation_history.append({"role": "assistant", "content": response_text})
+            else:
+                # Simple text responses can be added normally
+                self.conversation_history.append({"role": "user", "content": message})
+                if response_text.strip():
+                    self.conversation_history.append({"role": "assistant", "content": response_text})
             
             # Keep conversation history manageable
             if len(self.conversation_history) > 10:
