@@ -11,9 +11,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - flaresolverr
-      - postgres
-      - redis
+      flaresolverr:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - internal
 
@@ -44,6 +47,11 @@ services:
       - internal
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
@@ -53,6 +61,11 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 networks:
   internal:
