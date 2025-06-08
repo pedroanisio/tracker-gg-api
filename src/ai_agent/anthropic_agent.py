@@ -82,6 +82,7 @@ class ValorantAgent:
             
             # Process response and tool calls
             response_text = ""
+            has_tool_calls = any(content.type == "tool_use" for content in response.content)
             
             for content in response.content:
                 if content.type == "text":
@@ -140,27 +141,33 @@ class ValorantAgent:
         Yields:
             Streaming response chunks
         """
+        logger.info(f"🚀 Streaming Chat: Starting stream for message='{message[:50]}...', player_context='{player_context}'")
         try:
             # Build system prompt
+            logger.debug(f"🚀 Streaming Chat: Building system prompt")
             system_prompt = self._build_system_prompt()
             
             # Add player context if provided
             if player_context:
+                logger.debug(f"🚀 Streaming Chat: Adding player context: {player_context}")
                 system_prompt += f"\n\nCurrent player context: {player_context}"
             
             # Prepare messages
+            logger.debug(f"🚀 Streaming Chat: Preparing messages")
             messages = [
                 {"role": "user", "content": message}
             ]
             
             # Add conversation history
             if self.conversation_history:
+                logger.debug(f"🚀 Streaming Chat: Adding conversation history ({len(self.conversation_history)} messages)")
                 messages = self.conversation_history + messages
             
             # Make streaming request to Claude
             response_text = ""
             
             # Use regular message creation for now (streaming has async context issues)
+            logger.info(f"🚀 Streaming Chat: Making initial API call to Claude with {len(messages)} messages")
             response = self.anthropic.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=2048,
@@ -169,9 +176,11 @@ class ValorantAgent:
                 messages=messages,
                 tools=self._get_mcp_tools()
             )
+            logger.info(f"🚀 Streaming Chat: Initial Claude response received with {len(response.content)} content items")
             
             # Simulate streaming by yielding chunks of the response
             response_text = ""
+            has_tool_calls = any(content.type == "tool_use" for content in response.content)
             
             # Handle tool calls first
             for content in response.content:
@@ -210,10 +219,12 @@ class ValorantAgent:
                     logger.info(f"🔄 Streaming: Follow-up response received from Claude")
                     
                     # Stream the follow-up text response
+                    logger.info(f"🔄 Streaming: Processing follow-up response content ({len(follow_up_response.content)} items)")
                     for follow_content in follow_up_response.content:
                         if follow_content.type == "text":
                             text = follow_content.text
                             response_text += text
+                            logger.debug(f"🔄 Streaming: Streaming follow-up text ({len(text)} chars)")
                             
                             # Yield in chunks for streaming effect
                             words = text.split(' ')
@@ -223,6 +234,8 @@ class ValorantAgent:
                                 yield {"type": "text", "content": word}
                                 # Add small delay for streaming effect (optional)
                                 await asyncio.sleep(0.03)
+                        else:
+                            logger.warning(f"🔄 Streaming: Unexpected content type in follow-up: {follow_content.type}")
                     
                 elif content.type == "text":
                     text = content.text
@@ -237,18 +250,32 @@ class ValorantAgent:
                         # Add small delay for streaming effect
                         await asyncio.sleep(0.03)
             
-            # Update conversation history
-            self.conversation_history.append({"role": "user", "content": message})
-            self.conversation_history.append({"role": "assistant", "content": response_text})
+            # Update conversation history (avoid tool call complexity)
+            logger.debug(f"🚀 Streaming Chat: Updating conversation history")
+            
+            if has_tool_calls:
+                # For tool calls, reset conversation history to avoid Claude API issues
+                logger.debug(f"🚀 Streaming Chat: Tool calls detected, resetting conversation history")
+                self.conversation_history = []
+                if response_text.strip():
+                    # Start fresh conversation with this exchange
+                    self.conversation_history.append({"role": "user", "content": message})
+                    self.conversation_history.append({"role": "assistant", "content": response_text})
+            else:
+                # Simple text responses can be added normally
+                self.conversation_history.append({"role": "user", "content": message})
+                if response_text.strip():
+                    self.conversation_history.append({"role": "assistant", "content": response_text})
             
             # Keep conversation history manageable
             if len(self.conversation_history) > 10:
                 self.conversation_history = self.conversation_history[-8:]
                 
+            logger.info(f"🚀 Streaming Chat: Streaming completed successfully")
             yield {"type": "done"}
             
         except Exception as e:
-            logger.error(f"Error in chat stream: {e}")
+            logger.error(f"🚀 Streaming Chat: Error in chat stream: {e}", exc_info=True)
             yield {"type": "error", "content": f"I apologize, but I encountered an error while processing your request: {str(e)}"}
     
     def _build_system_prompt(self) -> str:
