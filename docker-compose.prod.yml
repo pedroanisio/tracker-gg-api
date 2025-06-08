@@ -1,0 +1,258 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tracker-api
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-valorant_user}:${POSTGRES_PASSWORD:-valorant_pass}@postgres:5432/${POSTGRES_DB:-valorant_tracker}
+      - FLARESOLVERR_URL=http://flaresolverr:8191
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ./data:/app/data  # Mount data directory for JSON files
+      - ./logs:/app/logs  # Mount logs directory
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Data ingestion service (can be used for one-time operations)
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tracker-ingestion
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-valorant_user}:${POSTGRES_PASSWORD:-valorant_pass}@postgres:5432/${POSTGRES_DB:-valorant_tracker}
+      - FLARESOLVERR_URL=http://flaresolverr:8191
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ./data:/app/data  # Mount data directory for JSON files
+      - ./logs:/app/logs  # Mount logs directory
+    profiles:
+      - ingestion  # Only start with --profile ingestion
+    command: ["init-db"]  # Can be overridden with other ingestion commands
+
+  # Enhanced FlareSolverr with better configuration
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: tracker-flaresolverr
+    ports:
+      - "${FLARESOLVERR_PORT:-8191}:8191"
+    environment:
+      - LOG_LEVEL=${FLARESOLVERR_LOG_LEVEL:-info}
+      - LOG_HTML=${FLARESOLVERR_LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${FLARESOLVERR_CAPTCHA_SOLVER:-none}
+      - TZ=${TIMEZONE:-UTC}
+      # Enhanced browser settings for better tracker.gg compatibility
+      - BROWSER_TIMEOUT=40000
+      - TEST_URL=https://tracker.gg
+      # Memory settings for stability
+      - NODE_OPTIONS=--max-old-space-size=2048
+    restart: unless-stopped
+    networks:
+      - internal
+    # Resource limits to prevent memory issues
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    # Enhanced health check for FlareSolverr
+    healthcheck:
+      test: |
+        curl -f http://localhost:8191/v1 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"cmd": "sessions.list"}' || exit 1
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+    # Volumes for browser data persistence (optional)
+    volumes:
+      - flaresolverr_data:/app/.local-chromium
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tracker-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-valorant_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-valorant_pass}
+      - POSTGRES_DB=${POSTGRES_DB:-valorant_tracker}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts:/docker-entrypoint-initdb.d  # For initialization scripts
+    # Enhanced PostgreSQL configuration
+    command: |
+      postgres
+      -c log_statement=all
+      -c log_destination=stderr
+      -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+      -c log_checkpoints=on
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_lock_waits=on
+      -c shared_preload_libraries=pg_stat_statements
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=64MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-valorant_user} -d ${POSTGRES_DB:-valorant_tracker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Optional: Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: tracker-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    profiles:
+      - redis  # Only start with --profile redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Optional: Monitoring with Prometheus metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tracker-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - internal
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  # Optional: Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tracker-grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - internal
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Backup service for data protection
+  backup:
+    image: postgres:15-alpine
+    container_name: tracker-backup
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-valorant_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-valorant_pass}
+      - POSTGRES_DB=${POSTGRES_DB:-valorant_tracker}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-valorant_pass}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    networks:
+      - internal
+    profiles:
+      - backup
+    # Run backup daily at 2 AM
+    command: |
+      sh -c '
+      echo "0 2 * * * /usr/local/bin/backup.sh" | crontab -
+      crond -f
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  internal:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  flaresolverr_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# Environment variable defaults (create a .env file to override)
+# POSTGRES_USER=valorant_user
+# POSTGRES_PASSWORD=valorant_pass
+# POSTGRES_DB=valorant_tracker
+# POSTGRES_PORT=5432
+# API_PORT=8000
+# FLARESOLVERR_PORT=8191
+# FLARESOLVERR_LOG_LEVEL=info
+# REDIS_PORT=6379
+# PROMETHEUS_PORT=9090
+# GRAFANA_PORT=3000
+# GRAFANA_PASSWORD=admin
+# TIMEZONE=UTC
+# ANTHROPIC_API_KEY=your_api_key_here

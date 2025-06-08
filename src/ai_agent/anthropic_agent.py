@@ -66,9 +66,17 @@ class ValorantAgent:
                 {"role": "user", "content": message}
             ]
             
-            # Add conversation history
+            # Add conversation history (but avoid tool call complexity)
             if self.conversation_history:
-                messages = self.conversation_history + messages
+                # Check if any previous message contains tool calls that might cause issues
+                has_tool_calls_in_history = any(
+                    isinstance(msg.get("content"), list) and 
+                    any(c.get("type") == "tool_use" for c in msg.get("content", []) if isinstance(c, dict))
+                    for msg in self.conversation_history
+                )
+                
+                if not has_tool_calls_in_history:
+                    messages = self.conversation_history + messages
             
             # Make request to Claude
             response = self.anthropic.messages.create(
@@ -168,10 +176,23 @@ class ValorantAgent:
                 {"role": "user", "content": message}
             ]
             
-            # Add conversation history
+            # Add conversation history (but avoid tool call complexity)
             if self.conversation_history:
-                logger.debug(f"🚀 Streaming Chat: Adding conversation history ({len(self.conversation_history)} messages)")
-                messages = self.conversation_history + messages
+                logger.debug(f"🚀 Streaming Chat: Checking conversation history ({len(self.conversation_history)} messages)")
+                
+                # Check if any previous message contains tool calls that might cause issues
+                has_tool_calls_in_history = any(
+                    isinstance(msg.get("content"), list) and 
+                    any(c.get("type") == "tool_use" for c in msg.get("content", []) if isinstance(c, dict))
+                    for msg in self.conversation_history
+                )
+                
+                if has_tool_calls_in_history:
+                    logger.debug(f"🚀 Streaming Chat: Tool calls detected in history, skipping history to avoid API errors")
+                    # Don't add conversation history with tool calls to avoid Claude API issues
+                else:
+                    logger.debug(f"🚀 Streaming Chat: Adding safe conversation history")
+                    messages = self.conversation_history + messages
             
             # Make streaming request to Claude
             response_text = ""
