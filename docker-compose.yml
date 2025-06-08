@@ -8,6 +8,7 @@ services:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-valorant_user}:${POSTGRES_PASSWORD:-valorant_pass}@postgres:5432/${POSTGRES_DB:-valorant_tracker}
       - FLARESOLVERR_URL=http://flaresolverr:8191
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
@@ -30,6 +31,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-valorant_user}:${POSTGRES_PASSWORD:-valorant_pass}@postgres:5432/${POSTGRES_DB:-valorant_tracker}
       - FLARESOLVERR_URL=http://flaresolverr:8191
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on:
       flaresolverr:
         condition: service_started

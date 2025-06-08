@@ -176,14 +176,18 @@ class ValorantAgent:
             # Handle tool calls first
             for content in response.content:
                 if content.type == "tool_use":
+                    logger.info(f"🔄 Streaming: Tool use detected - {content.name} with input: {content.input}")
                     yield {"type": "tool_call", "content": f"Using tool: {content.name}"}
                     
+                    logger.info(f"🔄 Streaming: Starting tool execution for {content.name}")
                     tool_result = await self._execute_mcp_tool(
                         content.name, 
                         content.input
                     )
+                    logger.info(f"🔄 Streaming: Tool execution completed for {content.name}, result length: {len(tool_result)}")
                     
                     # Get follow-up response with tool result
+                    logger.info(f"🔄 Streaming: Preparing follow-up message with tool result")
                     follow_up_messages = messages + [
                         {"role": "assistant", "content": response.content},
                         {"role": "user", "content": [
@@ -195,6 +199,7 @@ class ValorantAgent:
                         ]}
                     ]
                     
+                    logger.info(f"🔄 Streaming: Making follow-up API call to Claude")
                     follow_up_response = self.anthropic.messages.create(
                         model="claude-3-5-sonnet-20241022",
                         max_tokens=2048,
@@ -202,6 +207,7 @@ class ValorantAgent:
                         system=system_prompt,
                         messages=follow_up_messages
                     )
+                    logger.info(f"🔄 Streaming: Follow-up response received from Claude")
                     
                     # Stream the follow-up text response
                     for follow_content in follow_up_response.content:
@@ -334,32 +340,46 @@ Remember to be encouraging and constructive in your feedback, focusing on growth
         This is a simplified version - in a full implementation, 
         this would connect to the actual MCP server.
         """
+        logger.info(f"🤖 AI Agent: Starting MCP tool execution - tool_name='{tool_name}', tool_input={tool_input}")
         try:
             # Import the MCP server functions
+            logger.debug(f"🤖 AI Agent: Importing ValorantMCPServer")
             from .mcp_server import ValorantMCPServer
             
+            logger.debug(f"🤖 AI Agent: Creating MCP server instance")
             server = ValorantMCPServer()
             
+            logger.info(f"🤖 AI Agent: Executing tool '{tool_name}'")
+            
             if tool_name == "search_player":
+                logger.debug(f"🤖 AI Agent: Calling search_player with riot_id='{tool_input['riot_id']}'")
                 result = await server.search_player(tool_input["riot_id"])
             elif tool_name == "get_player_overview":
+                logger.debug(f"🤖 AI Agent: Calling get_player_overview with riot_id='{tool_input['riot_id']}'")
                 result = await server.get_player_overview(tool_input["riot_id"])
             elif tool_name == "analyze_performance_trends":
+                logger.debug(f"🤖 AI Agent: Calling analyze_performance_trends with riot_id='{tool_input['riot_id']}', days={tool_input.get('days', 30)}")
                 result = await server.analyze_performance_trends(
                     tool_input["riot_id"],
                     tool_input.get("days", 30)
                 )
             else:
+                logger.error(f"🤖 AI Agent: Unknown tool requested: {tool_name}")
                 return f"Unknown tool: {tool_name}"
+            
+            logger.debug(f"🤖 AI Agent: Tool '{tool_name}' completed, processing result")
             
             # Extract text content from result
             if result.content and len(result.content) > 0:
-                return result.content[0].text
+                response_text = result.content[0].text
+                logger.info(f"🤖 AI Agent: Tool '{tool_name}' returned {len(response_text)} characters")
+                return response_text
             else:
+                logger.warning(f"🤖 AI Agent: Tool '{tool_name}' returned no content")
                 return "No data returned from tool"
                 
         except Exception as e:
-            logger.error(f"Error executing MCP tool {tool_name}: {e}")
+            logger.error(f"🤖 AI Agent: Error executing MCP tool {tool_name}: {e}", exc_info=True)
             return f"Error executing tool: {str(e)}"
 
     def reset_conversation(self):

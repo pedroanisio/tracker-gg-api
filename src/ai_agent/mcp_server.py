@@ -100,23 +100,34 @@ class ValorantMCPServer:
         @self.server.call_tool()
         async def handle_call_tool(name: str, arguments: dict) -> CallToolResult:
             """Handle tool calls."""
+            logger.info(f"🛠️ MCP: Tool call received - name='{name}', arguments={arguments}")
             try:
                 if name == "search_player":
-                    return await self.search_player(arguments["riot_id"])
+                    logger.info(f"🛠️ MCP: Calling search_player")
+                    result = await self.search_player(arguments["riot_id"])
+                    logger.info(f"🛠️ MCP: search_player completed successfully")
+                    return result
                 elif name == "get_player_overview":
-                    return await self.get_player_overview(arguments["riot_id"])
+                    logger.info(f"🛠️ MCP: Calling get_player_overview")
+                    result = await self.get_player_overview(arguments["riot_id"])
+                    logger.info(f"🛠️ MCP: get_player_overview completed successfully")
+                    return result
                 elif name == "analyze_performance_trends":
-                    return await self.analyze_performance_trends(
+                    logger.info(f"🛠️ MCP: Calling analyze_performance_trends")
+                    result = await self.analyze_performance_trends(
                         arguments["riot_id"],
                         arguments.get("days", 30)
                     )
+                    logger.info(f"🛠️ MCP: analyze_performance_trends completed successfully")
+                    return result
                 else:
+                    logger.error(f"🛠️ MCP: Unknown tool requested: {name}")
                     return CallToolResult(
                         content=[TextContent(type="text", text=f"Unknown tool: {name}")],
                         isError=True
                     )
             except Exception as e:
-                logger.error(f"Error in tool {name}: {e}")
+                logger.error(f"🛠️ MCP: Error in tool {name}: {e}", exc_info=True)
                 return CallToolResult(
                     content=[TextContent(type="text", text=f"Error: {str(e)}")],
                     isError=True
@@ -124,7 +135,9 @@ class ValorantMCPServer:
 
     async def search_player(self, riot_id: str) -> CallToolResult:
         """Search for a player by riot ID or username."""
+        logger.info(f"🔍 MCP: search_player called with riot_id='{riot_id}'")
         try:
+            logger.debug(f"🔍 MCP: Creating database session for search_player")
             with Session(engine) as session:
                 # Try exact match first
                 stmt = select(Player).where(Player.riot_id == riot_id)
@@ -183,7 +196,9 @@ class ValorantMCPServer:
 
     async def get_player_overview(self, riot_id: str) -> CallToolResult:
         """Get comprehensive overview of player statistics."""
+        logger.info(f"📊 MCP: get_player_overview called with riot_id='{riot_id}'")
         try:
+            logger.debug(f"📊 MCP: Creating database session for player overview")
             with Session(engine) as session:
                 # Get player
                 stmt = select(Player).where(Player.riot_id == riot_id)
@@ -245,7 +260,9 @@ class ValorantMCPServer:
 
     async def analyze_performance_trends(self, riot_id: str, days: int = 30) -> CallToolResult:
         """Analyze player's performance trends over time."""
+        logger.info(f"📈 MCP: analyze_performance_trends called with riot_id='{riot_id}', days={days}")
         try:
+            logger.debug(f"📈 MCP: Creating database session for performance trends")
             with Session(engine) as session:
                 # Get player
                 stmt = select(Player).where(Player.riot_id == riot_id)

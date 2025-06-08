@@ -178,8 +178,8 @@ class TrackerDataLoader:
         original_filename = data.get("original_filename", "")
         api_data = data.get("data", {})
         
-        # Skip if no data found
-        if not api_data.get("found", False):
+        # Skip if no data found or if data is not a dictionary
+        if not isinstance(api_data, dict) or not api_data.get("found", False):
             return
         
         # Determine endpoint type from original filename
