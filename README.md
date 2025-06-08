@@ -21,7 +21,6 @@ This API allows you to fetch statistics for Valorant players, including current 
 
 - Fetch current act statistics for a given Valorant player.
 - Fetch all-time statistics across seasons for a given Valorant player.
-- API key authentication for secure access.
 
 ## Getting Started
 
@@ -59,15 +58,14 @@ pip install -r requirements.txt
 
 ### Environment Variables
 
-Create a `.env` file in the root of the project directory and add your API keys:
+Create a `.env` file in the root of the project directory and add your configuration:
 
 ```env
-API_KEYS=your_api_key # Create a new key using the openssl command
 FLARESOLVERR_URL=your_flare_solver_url
 TRN_API_KEY=your_trn_api_key
 ```
 
-Make sure to replace `your_api_key`, `your_flare_solver_url`, and `your_trn_api_key` with your actual values.
+Make sure to replace `your_flare_solver_url` and `your_trn_api_key` with your actual values.
 
 ## API Endpoints
 
@@ -82,7 +80,6 @@ Make sure to replace `your_api_key`, `your_flare_solver_url`, and `your_trn_api_
 **Parameters:**
 
 - `username`: The Riot username of the player (eg. Shitter#1234).
-- `X-API-Key`: Your API key (header).
 
 #### Get All Seasons Stats
 
@@ -93,11 +90,9 @@ Make sure to replace `your_api_key`, `your_flare_solver_url`, and `your_trn_api_
 **Parameters:**
 
 - `username`: The Riot username of the player (eg. Shitter#1234).
-- `X-API-Key`: Your API key (header).
 
 ## Error Handling
 
-- **403 Forbidden:** If the API key is invalid.
 - **404 Not Found:** If the player's stats cannot be found.
 
 ## License
