@@ -640,63 +640,62 @@ async def main():
         print(f"❌ Failed: {summary['failed_endpoints']}")
         print(f"📈 Success rate: {summary['success_rate']}")
         print(f"⏱️  Actual time: {actual_time:.1f} minutes")
-    
-    # Show files created (if any)
-    if 'results' in summary:
-        successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
-        if successful_files:
-            print(f"\n📁 Data files created:")
-            for filename in successful_files[:10]:  # Show first 10
-                print(f"  📄 {filename}")
+        
+        # Show files created (if any)
+        if 'results' in summary:
+            successful_files = [r.get('filename') for r in summary['results'] if r.get('filename')]
+            if successful_files:
+                print(f"\n📁 Data files created:")
+                for filename in successful_files[:10]:  # Show first 10
+                    print(f"  📄 {filename}")
+                
+                if len(successful_files) > 10:
+                    print(f"  ... and {len(successful_files) - 10} more files")
             
-            if len(successful_files) > 10:
-                print(f"  ... and {len(successful_files) - 10} more files")
+            # Show breakdown by API version
+            v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
+            v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
+            rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+            
+            if v1_success > 0 or v2_success > 0:
+                print(f"\n📊 API Breakdown:")
+                print(f"  🔹 API v1 successful: {v1_success}")
+                print(f"  🔹 API v2 successful: {v2_success}")
+                if rate_limited > 0:
+                    print(f"  🚫 Rate limited: {rate_limited}")
         
-        # Show breakdown by API version
-        v1_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v1_') and r.get('status') == 'success'])
-        v2_success = len([r for r in summary['results'] if r.get('endpoint', '').startswith('v2_') and r.get('status') == 'success'])
-        rate_limited = len([r for r in summary['results'] if r.get('status') == 'rate_limited'])
+        # Show database loading results
+        db_loading = summary.get("database_loading", {})
+        db_status = db_loading.get("status", "unknown")
         
-        if v1_success > 0 or v2_success > 0:
-            print(f"\n📊 API Breakdown:")
-            print(f"  🔹 API v1 successful: {v1_success}")
-            print(f"  🔹 API v2 successful: {v2_success}")
-            if rate_limited > 0:
-                print(f"  🚫 Rate limited: {rate_limited}")
-    
-    # Show database loading results
-    db_loading = summary.get("database_loading", {})
-    db_status = db_loading.get("status", "unknown")
-    
-    print(f"\n🗄️  Database Loading:")
-    if db_status == "success":
-        print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
-        print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
-    elif db_status == "error":
-        print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
-    elif db_status == "skipped":
-        print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
-    elif db_status == "disabled":
-        print(f"  ⏸️  Disabled")
-    elif db_status == "no_data":
-        print(f"  📭 No data to load")
+        print(f"\n🗄️  Database Loading:")
+        if db_status == "success":
+            print(f"  ✅ Successfully loaded {db_loading.get('endpoints_loaded', 0)} endpoints")
+            print(f"  📁 Combined file: {Path(db_loading.get('combined_filename', '')).name}")
+        elif db_status == "error":
+            print(f"  ❌ Failed: {db_loading.get('error', 'Unknown error')}")
+        elif db_status == "skipped":
+            print(f"  ⚠️  Skipped: {db_loading.get('reason', 'No reason given')}")
+        elif db_status == "disabled":
+            print(f"  ⏸️  Disabled")
+        elif db_status == "no_data":
+            print(f"  📭 No data to load")
+        else:
+            print(f"  ❓ Status: {db_status}")
+        
+        # Show next steps based on mode
+        if mode == "init":
+            print(f"\n🚀 Next Steps:")
+            print(f"  • User data is now initialized in database")
+            print(f"  • Use --mode update for regular data refreshes")
+            print(f"  • Web interface can now use the update button")
+        elif mode == "update":
+            print(f"\n🚀 Update Status:")
+            print(f"  • Recent data has been refreshed")
+            print(f"  • Priority endpoints updated successfully")
+            print(f"  • Ready for web interface display")
     else:
-        print(f"  ❓ Status: {db_status}")
-    
-    # Show next steps based on mode
-    if mode == "init":
-        print(f"\n🚀 Next Steps:")
-        print(f"  • User data is now initialized in database")
-        print(f"  • Use --mode update for regular data refreshes")
-        print(f"  • Web interface can now use the update button")
-    elif mode == "update":
-        print(f"\n🚀 Update Status:")
-        print(f"  • Recent data has been refreshed")
-        print(f"  • Priority endpoints updated successfully")
-        print(f"  • Ready for web interface display")
-    
-    else:
-        print(f"❌ {mode.title()} operation failed")
+        print(f"❌ Operation failed")
 
     operation_name = "initialization" if mode == "init" else "update" if mode == "update" else "discovery"
     print(f"\n✨ {operation_name.title()} finished!")
