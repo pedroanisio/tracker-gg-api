@@ -13,9 +13,9 @@ import time
 from typing import Dict, Optional
 
 from .user_manager import user_manager
-from ..shared.utils import get_logger
+from ..shared.utils import setup_logger
 
-logger = get_logger(__name__)
+logger = setup_logger(__name__)
 
 
 class StartupInitializer:

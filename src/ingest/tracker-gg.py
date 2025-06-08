@@ -625,21 +625,21 @@ async def main():
     actual_time = (time.time() - start_time) / 60
     
     if summary:
-    # Determine display title based on mode
-    if mode == "init":
-        title = "🎉 INITIALIZATION COMPLETE!"
-    elif mode == "update":
-        title = "⚡ UPDATE COMPLETE!"
-    else:
-        title = "🎉 FULL DISCOVERY COMPLETE!"
-    
-    print(f"\n{title}")
-    print("=" * 60)
-    print(f"📊 Total endpoints: {summary['total_endpoints']}")
-    print(f"✅ Successful: {summary['successful_endpoints']}")
-    print(f"❌ Failed: {summary['failed_endpoints']}")
-    print(f"📈 Success rate: {summary['success_rate']}")
-    print(f"⏱️  Actual time: {actual_time:.1f} minutes")
+        # Determine display title based on mode
+        if mode == "init":
+            title = "🎉 INITIALIZATION COMPLETE!"
+        elif mode == "update":
+            title = "⚡ UPDATE COMPLETE!"
+        else:
+            title = "🎉 FULL DISCOVERY COMPLETE!"
+        
+        print(f"\n{title}")
+        print("=" * 60)
+        print(f"📊 Total endpoints: {summary['total_endpoints']}")
+        print(f"✅ Successful: {summary['successful_endpoints']}")
+        print(f"❌ Failed: {summary['failed_endpoints']}")
+        print(f"📈 Success rate: {summary['success_rate']}")
+        print(f"⏱️  Actual time: {actual_time:.1f} minutes")
     
     # Show files created (if any)
     if 'results' in summary:

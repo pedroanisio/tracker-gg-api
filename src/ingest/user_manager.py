@@ -15,9 +15,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from ..shared.utils import get_logger
+from ..shared.utils import setup_logger
 
-logger = get_logger(__name__)
+logger = setup_logger(__name__)
 
 
 class UserManager:
@@ -174,8 +174,19 @@ class UserManager:
                 start_time = time.time()
                 
                 try:
-                    # Import here to avoid circular imports
-                    from .tracker_gg import load_full_api_data
+                    # Import here to avoid circular imports - note tracker-gg.py filename
+                    import importlib.util
+                    import sys
+                    from pathlib import Path
+                    
+                    # Import the tracker-gg.py module dynamically
+                    tracker_path = Path(__file__).parent / "tracker-gg.py"
+                    spec = importlib.util.spec_from_file_location("tracker_gg", tracker_path)
+                    tracker_module = importlib.util.module_from_spec(spec)
+                    sys.modules["tracker_gg"] = tracker_module
+                    spec.loader.exec_module(tracker_module)
+                    
+                    load_full_api_data = tracker_module.load_full_api_data
                     
                     result = await load_full_api_data(riot_id, load_to_database=True)
                     
@@ -260,8 +271,19 @@ class UserManager:
             start_time = time.time()
             
             try:
-                # Import here to avoid circular imports
-                from .tracker_gg import update_recent_data
+                # Import here to avoid circular imports - note tracker-gg.py filename
+                import importlib.util
+                import sys
+                from pathlib import Path
+                
+                # Import the tracker-gg.py module dynamically
+                tracker_path = Path(__file__).parent / "tracker-gg.py"
+                spec = importlib.util.spec_from_file_location("tracker_gg", tracker_path)
+                tracker_module = importlib.util.module_from_spec(spec)
+                sys.modules["tracker_gg"] = tracker_module
+                spec.loader.exec_module(tracker_module)
+                
+                update_recent_data = tracker_module.update_recent_data
                 
                 result = await update_recent_data(riot_id, priority_threshold, load_to_database=True)
                 
