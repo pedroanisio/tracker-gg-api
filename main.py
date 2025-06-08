@@ -53,9 +53,7 @@ app = FastAPI(lifespan=lifespan)
     response_model=ValorantPlayerStats,
     dependencies=[Depends(RateLimiter(times=10, seconds=60))],
 )
-async def get_valorant_current_act_stats(
-    username: str, api_key: str = Depends(get_api_key)
-):
+async def get_valorant_current_act_stats(username: str):
     player_stats = await fetch_valorant_player_stats(
         username=username, season="current"
     )
@@ -89,35 +87,4 @@ async def status():
     return {"status": "ok"}
 
 
-# @app.post(
-#     "/admin/create-api-key",
-#     summary="Create a new API Key",
-# )
-# async def create_new_api_key(
-#     user: str,
-#     permission: str = "normal",
-#     db: Session = Depends(get_session_local),
-#     admin_api_key_object: APIKey = Depends(get_admin_api_key),
-# ) -> dict:
-#     """
-#     Create a new API key, but only accessible to users with 'admin' permissions.
-#     """
-    # The get_admin_api_key dependency has already verified that admin_api_key_object is a valid admin key.
 
-    if permission not in ["normal", "admin"]:
-        raise HTTPException(status_code=400, detail="Invalid permission level specified for the new key.")
-
-    new_plaintext_key = generate_random_api_key()
-    try:
-        # add_api_key handles hashing internally
-        add_api_key(db, new_plaintext_key, user, permission)
-        return {
-            "message": f"API Key for user '{user}' created successfully. This is the only time you will see the key.",
-            "api_key": new_plaintext_key,  # Show plaintext key once upon creation
-            "user": user,
-            "permission": permission,
-        }
-    except Exception as e:
-        db.rollback() # Rollback in case of failure during add_api_key
-        # Propagate the specific error from add_api_key (e.g., if a hash collision occurred, though unlikely with SHA256)
-        raise HTTPException(status_code=400, detail=f"Failed to create API key: {str(e)}")

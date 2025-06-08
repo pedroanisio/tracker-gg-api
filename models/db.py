@@ -1,28 +1,12 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, func, Boolean
-# import hashlib
+from sqlalchemy import create_engine
 import os
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
-
 Base = declarative_base()
-
-
-# class APIKey(Base):
-#     __tablename__ = "api_keys"
-# 
-#     id = Column(Integer, primary_key=True, autoincrement=True)
-#     key = Column(String, unique=True, nullable=False)
-#     user = Column(String, nullable=False)
-#     permission = Column(String, default="normal")
-#     created_at = Column(DateTime, default=func.now(), nullable=False)
-#     is_active = Column(Boolean, default=True, nullable=False)
-#     last_used_at = Column(DateTime, nullable=True)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
