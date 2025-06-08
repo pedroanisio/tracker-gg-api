@@ -23,6 +23,7 @@ dependencies = [
     "anthropic>=0.50.0",
     "mcp[cli]>=1.0.0",
     "websockets>=12.0",
+    "playwright>=1.52.0",
 ]
 
 [project.optional-dependencies]
