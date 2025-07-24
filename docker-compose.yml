@@ -11,7 +11,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-8009}:8000"
     depends_on:
       flaresolverr:
         condition: service_started

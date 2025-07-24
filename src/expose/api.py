@@ -702,15 +702,16 @@ async def enhanced_update_player(
 ):
     """Enhanced update player data using browser-based API interception."""
     try:
-        # Import the enhanced update system
-        from ..ingest.scraper import enhanced_update_player_data
+        # Import the user update system
+        from ..ingest.user_manager import update_users
         
         riot_id = validate_riot_id(riot_id)
         
         logger.info(f"Starting browser-based update for {riot_id}")
         
-        # Use the new enhanced browser-based updater
-        result = await enhanced_update_player_data(riot_id)
+        # Use priority update (fast 2-5 minute update)
+        results = await update_users([riot_id], priority="high")
+        result = results.get(riot_id, {"status": "error", "error": "No result returned"})
         
         # Process the result
         if result.get("status") == "success":
@@ -923,10 +924,17 @@ async def bulk_update_players(
 async def get_update_status():
     """Get status of the enhanced update system."""
     try:
-        # Check FlareSolverr connectivity
-        from ..ingest.flaresolverr_client import test_flaresolverr_connection
+        # Check FlareSolverr connectivity by making a simple test request
+        import aiohttp
         
-        flaresolverr_status = test_flaresolverr_connection()
+        try:
+            async with aiohttp.ClientSession() as session:
+                payload = {"cmd": "sessions.list"}
+                async with session.post("http://tracker-flaresolverr:8191/v1", json=payload, timeout=5) as response:
+                    result = await response.json()
+                    flaresolverr_status = result.get("status") == "ok"
+        except Exception:
+            flaresolverr_status = False
         
         # Check recent update logs
         with get_session() as session:
@@ -986,11 +994,12 @@ async def test_update_system(
         # Validate the test riot ID
         test_riot_id = validate_riot_id(test_riot_id)
         
-        # Run a test update
-        from ..ingest.scraper import enhanced_update_player_data
+        # Run a test update using priority system
+        from ..ingest.user_manager import update_users
         
         start_time = datetime.utcnow()
-        result = await enhanced_update_player_data(test_riot_id)
+        results = await update_users([test_riot_id], priority="high")
+        result = results.get(test_riot_id, {"status": "error", "error": "No result returned"})
         end_time = datetime.utcnow()
         
         # Analyze the test results

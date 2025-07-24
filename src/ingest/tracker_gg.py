@@ -10,8 +10,21 @@ from itertools import product
 from pathlib import Path
 
 # Import database loading functionality
-from .data_loader import UnifiedTrackerDataLoader
-from ..shared.utils import setup_logger
+try:
+    from .data_loader import UnifiedTrackerDataLoader
+    from ..shared.utils import setup_logger
+except ImportError:
+    # Fallback for when running in different contexts
+    import sys
+    from pathlib import Path
+    
+    # Add src to path for absolute imports
+    src_path = Path(__file__).parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    
+    from ingest.data_loader import UnifiedTrackerDataLoader
+    from shared.utils import setup_logger
 
 load_dotenv()
 
@@ -293,7 +306,10 @@ def load_results_to_database(username: str, combined_data: dict, data_dir: str =
         
         # Load into database using the convenience function
         logger.info("Loading data into database...")
-        from .data_loader import load_single_file
+        try:
+            from .data_loader import load_single_file
+        except ImportError:
+            from ingest.data_loader import load_single_file
         stats = load_single_file(str(combined_filename))
         
         logger.info(f"Database loading completed: {stats}")
@@ -705,7 +721,10 @@ def load_existing_files_to_database(data_dir: str = "./data", pattern: str = "gr
     """Load existing grammar test files into the database."""
     
     try:
-        from .data_loader import load_data_from_directory
+        try:
+            from .data_loader import load_data_from_directory
+        except ImportError:
+            from ingest.data_loader import load_data_from_directory
         
         data_path = Path(data_dir)
         if not data_path.exists():
